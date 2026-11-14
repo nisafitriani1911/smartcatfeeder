@@ -1,4 +1,4 @@
-// ===== SMART CAT FEEDER - SERVO BUKA SELAMA KUCING MAKAN =====
+// ===== SMART CAT FEEDER - PASSWORD + MENU + PAKAN (GRAM) + NAMA KUCING + MQTT EMQX + KONTROL WEB =====
 #include <Wire.h>
 #include <SPI.h>
 #include <RTClib.h>
@@ -10,57 +10,81 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 
-// ---------- WIFI + MQTT (EMQX Cloud Serverless) ----------
-#define WIFI_SSID   "Wokwi-GUEST"          // WiFi bawaan simulator Wokwi
-#define WIFI_PASS   ""
-#define MQTT_HOST   "ge188d00.ala.asia-southeast1.emqxsl.com"
-#define MQTT_PORT   8883                   // MQTT over TLS
-#define MQTT_USER   "ISI_USERNAME"         // buat di EMQX Console > Access Control > Authentication
-#define MQTT_PASS   "ISI_PASSWORD"
-#define TOPIC_STATUS "smartcat/status"     // ESP32 -> HP (retained, tiap 2 dtk)
-#define TOPIC_CMD    "smartcat/cmd"        // HP -> ESP32: "feed"
-#define TOPIC_ONLINE "smartcat/online"     // "1"/"0" (last will)
+// ---------- WIFI ----------
+const char* WIFI_SSID = "Wokwi-GUEST";   // Wokwi: SSID ini, tanpa password
+const char* WIFI_PASS = "";
+const int   WIFI_CH   = 6;               // channel khusus Wokwi (di board asli hapus argumen ini)
 
-#define TOPIC_EVENT  "smartcat/event"      // ESP32 -> HP: kejadian (makan, ditolak, pakan menipis)
+// ---------- MQTT (EMQX CLOUD SERVERLESS) ----------
+const char* MQTT_HOST = "mf661d1f.ala.asia-southeast1.emqxsl.com";
+const int   MQTT_PORT = 8883;            // MQTT over TLS
+const char* MQTT_USER = "catfeeder";     // <-- GANTI: user dari EMQX > Authentication
+const char* MQTT_PASS = "catfeeder123"; // <-- GANTI
 
-WiFiClientSecure netClient;
-PubSubClient mqtt(netClient);
-String pendingCmd = "";                    // perintah dari HP, dijalankan di loop()
-unsigned long lastMqttTry = 0, lastPub = 0;
-bool remoteHold = false;                   // katup dibuka manual dari HP
-unsigned long remoteStart = 0;
-const unsigned long REMOTE_MAX_MS = 30000; // pengaman: menutup otomatis setelah 30 dtk
-uint32_t bootTs = 0, lastFeedTs = 0;       // waktu RTC (unix) saat nyala & terakhir kucing makan
-char lastSrc[12] = "-";
-int lowState = 0;                          // 0 ok, 1 menipis, 2 habis
+// true  = tanpa verifikasi sertifikat (paling mudah, cocok untuk Wokwi / belajar)
+// false = verifikasi dengan CA cert (lebih aman, isi CA_CERT di bawah)
+#define USE_INSECURE true
+
+const char CA_CERT[] PROGMEM = R"EOF(
+-----BEGIN CERTIFICATE-----
+(tempel isi file CA Certificate yang diunduh dari EMQX di sini)
+-----END CERTIFICATE-----
+)EOF";
+
+// Topik (semua di bawah smartcat/feeder01/)
+#define T_ONLINE  "smartcat/feeder01/online"        // retained + Last Will
+#define T_STATUS  "smartcat/feeder01/status"        // retained, JSON status
+#define T_EVENT   "smartcat/feeder01/event"         // JSON kejadian
+#define T_CMD     "smartcat/feeder01/cmd/#"         // perintah masuk
 
 // ---------- PIN ----------
 #define TFT_CS    5     // TFT: SCK=18, MOSI=23, RST & LED -> 3V3 (MISO tidak dipakai)
 #define TFT_DC    2
 #define SERVO_PIN 16
-#define TRIG_PIN  17    // HC-SR04 TRIG
+#define TRIG_PIN  17    // HC-SR04 TRIG (JANGAN sambung LED ke pin ini)
 #define ECHO_PIN  19    // HC-SR04 ECHO
-#define POT_PIN   39    // slide potentiometer: level pakan (label "VN")
 #define BTN_PIN   0     // tombol feed manual
 #define BUZZ_PIN  15
 #define LED_R     32    // merah: servo TERTUTUP (kucing tidak makan)
 #define LED_G     4     // hijau: servo TERBUKA (kucing makan)
-#define JOY_X     35
-#define JOY_Y     34
+#define JOY_X     35    // HORZ
+#define JOY_Y     34    // VERT
 // I2C RTC: SDA=21, SCL=22
+
+// ---------- ARAH JOYSTICK ----------
+#define JOY_INVERT_X true    // true supaya KANAN = pindah ke kotak berikutnya
+#define JOY_INVERT_Y true    // ubah ke true/false kalau ATAS/BAWAH terbalik
+#define JOY_LOW  1000
+#define JOY_HIGH 3000
+
+// ---------- PASSWORD ----------
+const char* PASSWORD = "1010";
+const int PASS_LEN = 4;
 
 // ---------- SUDUT SERVO ----------
 #define SERVO_OPEN   0      // sudut saat katup TERBUKA
-#define SERVO_CLOSED 90     // sudut saat katup TERTUTUP (ubah angka ini kalau posisinya kurang pas)
+#define SERVO_CLOSED 90     // sudut saat katup TERTUTUP
 
-// ---------- PENGATURAN ----------
+// ---------- PENGATURAN KUCING ----------
 const float CAT_NEAR_CM  = 20.0;         // kucing dianggap datang jika < 20 cm
 const float CAT_LEAVE_CM = 25.0;         // kucing dianggap masih ada jika < 25 cm
 const unsigned long CONFIRM_MS = 1000;   // harus dekat 1 dtk baru servo buka
 const unsigned long LEAVE_MS   = 2000;   // jauh 2 dtk baru servo tutup
 const unsigned long MAX_EAT_MS = 60000;  // pengaman: maks makan 60 dtk
-const unsigned long MIN_GAP_MS = 20000;  // jeda antar makan (simulasi 20 dtk; asli mis. 4 jam = 14400000)
-const int REQ_MAX = 3;                   // maksimal sesi makan "minta" per hari
+
+// ---------- PENGATURAN PAKAN (GRAM) ----------
+const float MAX_GRAM         = 100.0;    // kapasitas wadah
+const float FLOW_G_PER_SEC   = 2.0;      // pakan keluar 2 gram per detik saat katup terbuka
+const int   GRAM_PER_PORSI   = 5;        // 1 porsi = 5 gram
+const float EMPTY_GRAM       = 0.5;      // <= ini dianggap habis
+float pakanGram = MAX_GRAM;              // stok awal PENUH (100 gram)
+unsigned long lastConsume = 0;
+
+// ---------- NAMA KUCING ----------
+#define NAME_MAX 8
+char namaKucing[NAME_MAX + 1] = "MIMI";
+const char CHARSET[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const int NCHARS = sizeof(CHARSET) - 1;
 
 // Keypad 4x3 (kolom C4 tidak dipakai)
 const byte ROWS = 4, COLS = 3;
@@ -77,6 +101,8 @@ Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 Adafruit_ILI9341 tft(TFT_CS, TFT_DC, -1);
 RTC_DS1307 rtc;
 Servo servo;
+WiFiClientSecure netClient;
+PubSubClient mqtt(netClient);
 
 #define BG    ILI9341_BLACK
 #define BLACK ILI9341_BLACK
@@ -91,52 +117,188 @@ Servo servo;
 // ---------- DATA ----------
 struct Jadwal { int h, m; bool on; };
 Jadwal jadwal[3] = { {7, 0, true}, {12, 0, true}, {18, 0, true} };
-int porsi = 3;                    // 1..5 (jadwal/manual: servo buka porsi x 1 detik)
+int porsi = 3;                    // 1..5 (1 porsi = 5 gram)
 long lastFeedKey = -1;
 unsigned long lastManual = 0, lastScreen = 0, lastCat = 0, lastPing = 0, lastLog = 0;
-unsigned long lastFeedMs = 0;     // kapan terakhir selesai makan (0 = belum pernah)
 bool needStatic = true;
 int catFrame = 0, catMood = 0;    // mood: 0 santai, 1 makan, 2 lapar/sedih
 
 // status deteksi kucing
 float lastDist = 400;
 bool catNear = false, handled = false, eating = false;
-bool servoOpen = false;           // status katup: true = terbuka
+bool servoOpen = false;
 unsigned long nearSince = 0, farSince = 0, eatStart = 0, lastNearMs = 0;
-int reqCount = 0, lastDay = -1;
-long leaveLeft = 0;               // sisa ms sebelum servo menutup (untuk tampilan layar)
+long leaveLeft = 0;
 
-const char* items[] = {"1 Jadwal 1", "2 Jadwal 2", "3 Jadwal 3",
-                       "4 Porsi", "5 Set Jam", "6 Tes Servo", "7 Keluar"};
-const int NITEMS = 7;
+const char* items[] = {"1 Tambah Pakan", "2 Nama Kucing", "3 Jadwal 1",
+                       "4 Jadwal 2", "5 Jadwal 3", "6 Porsi",
+                       "7 Set Jam", "8 Tes Servo", "9 Keluar"};
+const int NITEMS = 9;
 
-// ---------- EVENT KE HP ----------
-void pubEvent(const char* type, const char* src, int val, const char* txt) {
-  if (!mqtt.connected()) return;
-  char j[220];
-  snprintf(j, sizeof(j), "{\"type\":\"%s\",\"src\":\"%s\",\"val\":%d,\"txt\":\"%s\",\"ts\":%lu}",
-           type, src, val, txt, (unsigned long)rtc.now().unixtime());
-  mqtt.publish(TOPIC_EVENT, j);
+// ---------- MQTT STATE ----------
+volatile int pendFeed = 0;                 // perintah feed dari MQTT (dijalankan di loop)
+volatile int pendServo = 0;                // 1 = buka, 2 = tutup (dari web)
+bool manualHold = false;                   // servo dibuka manual dari web
+bool lastEatingPub = false, lastServoPub = false;
+unsigned long lastMqttTry = 0, lastStatusPub = 0;
+
+// ---------- PAKAN ----------
+bool pakanHabis() { return pakanGram <= EMPTY_GRAM; }
+
+int foodPercent() {
+  return constrain((int)(pakanGram * 100.0 / MAX_GRAM), 0, 100);
 }
 
-void markFed(const char* src) {
-  lastFeedTs = rtc.now().unixtime();
-  strncpy(lastSrc, src, sizeof(lastSrc) - 1);
-  lastSrc[sizeof(lastSrc) - 1] = 0;
+// ---------- MQTT ----------
+void publishStatus() {
+  if (!mqtt.connected()) return;
+  DateTime now = rtc.now();
+  char j[3][6];
+  for (int i = 0; i < 3; i++) {
+    if (jadwal[i].on) snprintf(j[i], sizeof(j[i]), "%02d:%02d", jadwal[i].h, jadwal[i].m);
+    else              snprintf(j[i], sizeof(j[i]), "OFF");
+  }
+  char js[360];
+  snprintf(js, sizeof(js),
+    "{\"nama\":\"%s\",\"pakan\":%.1f,\"persen\":%d,\"servo\":\"%s\",\"makan\":%s,"
+    "\"jarak\":%d,\"porsi\":%d,\"jadwal\":[\"%s\",\"%s\",\"%s\"],\"jam\":\"%02d:%02d:%02d\"}",
+    namaKucing, pakanGram, foodPercent(), servoOpen ? "BUKA" : "TUTUP",
+    eating ? "true" : "false", (int)min(lastDist, 400.0f), porsi, j[0], j[1], j[2],
+    now.hour(), now.minute(), now.second());
+  mqtt.publish(T_STATUS, js, true);
+  lastEatingPub = eating;
+  lastServoPub  = servoOpen;
+  lastStatusPub = millis();
+}
+
+void publishEvent(const char* ev, const char* detail) {
+  if (!mqtt.connected()) return;
+  char js[160];
+  snprintf(js, sizeof(js), "{\"event\":\"%s\",\"detail\":\"%s\",\"pakan\":%.1f}",
+           ev, detail, pakanGram);
+  mqtt.publish(T_EVENT, js);
+}
+
+// Callback: HANYA set data / flag (tidak ada delay panjang di sini)
+void onMqtt(char* topic, byte* payload, unsigned int len) {
+  char buf[48];
+  unsigned int n = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
+  memcpy(buf, payload, n);
+  buf[n] = 0;
+  String t = topic;
+  String p = String(buf);
+  p.trim();
+  Serial.printf("[MQTT] %s = %s\n", topic, buf);
+
+  if (t.endsWith("/cmd/feed")) {                       // payload: 1..5 (porsi), kosong = porsi default
+    int v = p.toInt();
+    pendFeed = (v >= 1 && v <= 5) ? v : porsi;
+  } else if (t.endsWith("/cmd/porsi")) {               // payload: 1..5
+    int v = p.toInt();
+    if (v >= 1 && v <= 5) porsi = v;
+  } else if (t.endsWith("/cmd/pakan")) {               // payload: gram yang ditambah
+    int g = p.toInt();
+    if (g > 0) {
+      pakanGram += g;
+      if (pakanGram > MAX_GRAM) pakanGram = MAX_GRAM;
+      publishEvent("tambah_pakan", "via MQTT");
+    }
+  } else if (t.endsWith("/cmd/nama")) {                // payload: nama (A-Z, 0-9, maks 8)
+    p.toUpperCase();
+    char nb[NAME_MAX + 1];
+    int k = 0;
+    for (unsigned int i = 0; i < p.length() && k < NAME_MAX; i++)
+      if (strchr(CHARSET, p[i]) && p[i] != ' ') nb[k++] = p[i];
+    nb[k] = 0;
+    if (k > 0) strcpy(namaKucing, nb);
+  } else if (t.indexOf("/cmd/jadwal/") >= 0) {         // /cmd/jadwal/1..3  payload: "HH:MM" atau "OFF"
+    int idx = t.charAt(t.length() - 1) - '1';
+    if (idx >= 0 && idx < 3) {
+      p.toUpperCase();
+      if (p == "OFF") jadwal[idx].on = false;
+      else {
+        int h, m;
+        if (sscanf(buf, "%d:%d", &h, &m) == 2 && h >= 0 && h <= 23 && m >= 0 && m <= 59)
+          jadwal[idx] = {h, m, true};
+      }
+    }
+  } else if (t.endsWith("/cmd/servo")) {               // payload: BUKA / TUTUP
+    p.toUpperCase();
+    if (p == "BUKA" || p == "1") pendServo = 1;
+    else if (p == "TUTUP" || p == "0") pendServo = 2;
+  } else if (t.endsWith("/cmd/jam")) {                 // payload: HH:MM
+    int h, m;
+    if (sscanf(buf, "%d:%d", &h, &m) == 2 && h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      DateTime nw = rtc.now();
+      rtc.adjust(DateTime(nw.year(), nw.month(), nw.day(), h, m, 0));
+    }
+  }
+  publishStatus();
+}
+
+void mqttConnect() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (mqtt.connected()) return;
+  if (millis() - lastMqttTry < 5000 && lastMqttTry != 0) return;
+  lastMqttTry = millis();
+
+  String cid = "catfeeder-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+  Serial.print("[MQTT] connect... ");
+  // Last Will: kalau ESP32 mati, broker otomatis kirim "offline"
+  if (mqtt.connect(cid.c_str(), MQTT_USER, MQTT_PASS, T_ONLINE, 1, true, "offline")) {
+    Serial.println("OK");
+    mqtt.publish(T_ONLINE, "online", true);
+    mqtt.subscribe(T_CMD, 1);
+    publishStatus();
+  } else {
+    Serial.printf("GAGAL rc=%d\n", mqtt.state());
+  }
+}
+
+// dipanggil di loop utama
+void mqttHandle() {
+  mqttConnect();
+  if (!mqtt.connected()) return;
+  mqtt.loop();
+  if (eating != lastEatingPub || servoOpen != lastServoPub || millis() - lastStatusPub > 3000)
+    publishStatus();
+}
+
+// dipanggil di loop blocking (menu, input, feed) supaya koneksi tidak putus
+void mqttTick() {
+  if (mqtt.connected()) mqtt.loop();
 }
 
 // ---------- LED + SERVO ----------
-// open=true  -> servo BUKA,  HIJAU nyala konstan, MERAH mati
-// open=false -> servo TUTUP, MERAH nyala konstan, HIJAU mati
-void ledEating(bool e) {
-  digitalWrite(LED_G, e ? HIGH : LOW);
-  digitalWrite(LED_R, e ? LOW : HIGH);
+// servoOpen = true  -> HIJAU konstan, MERAH mati
+// servoOpen = false -> MERAH konstan, HIJAU mati
+void updateLED() {
+  digitalWrite(LED_G, servoOpen ? HIGH : LOW);
+  digitalWrite(LED_R, servoOpen ? LOW : HIGH);
 }
 
 void setServo(bool open) {
   servoOpen = open;
   servo.write(open ? SERVO_OPEN : SERVO_CLOSED);
-  ledEating(open);
+  updateLED();
+}
+
+// ---------- JOYSTICK ----------
+bool joyUp()    { int v = analogRead(JOY_Y); return JOY_INVERT_Y ? (v > JOY_HIGH) : (v < JOY_LOW);  }
+bool joyDown()  { int v = analogRead(JOY_Y); return JOY_INVERT_Y ? (v < JOY_LOW)  : (v > JOY_HIGH); }
+bool joyRight() { int v = analogRead(JOY_X); return JOY_INVERT_X ? (v < JOY_LOW)  : (v > JOY_HIGH); }
+bool joyLeft()  { int v = analogRead(JOY_X); return JOY_INVERT_X ? (v > JOY_HIGH) : (v < JOY_LOW);  }
+
+void waitIdle() {                            // tunggu joystick kembali ke tengah
+  unsigned long t0 = millis();
+  while ((analogRead(JOY_X) > JOY_HIGH || analogRead(JOY_X) < JOY_LOW ||
+          analogRead(JOY_Y) > JOY_HIGH || analogRead(JOY_Y) < JOY_LOW) &&
+         millis() - t0 < 2000) {
+    updateLED();
+    mqttTick();
+    delay(20);
+  }
+  delay(100);
 }
 
 // ---------- TFT HELPER ----------
@@ -266,7 +428,7 @@ void showCat(int x, int y) {
 
 // ---------- SPLASH ----------
 int splashFrame = 0;
-const int SPLASH_TOTAL = 26;
+const int SPLASH_TOTAL = 34;
 
 void splashStatic() {
   tft.fillScreen(BG);
@@ -310,6 +472,56 @@ void beep(int n, int ms) {
   }
 }
 
+// ---------- PASSWORD ----------
+void drawPasswordStatic() {
+  tft.fillScreen(BG);
+  tft.fillRect(0, 0, 320, 30, ILI9341_NAVY);
+  txt(64, 7, 2, ILI9341_WHITE, ILI9341_NAVY, "SMART CAT FEEDER");
+  txt(40, 50, 2, ILI9341_CYAN, BG, "Masukkan password:");
+  tft.drawRect(60, 90, 200, 60, ILI9341_WHITE);
+  txt(10, 190, 2, ILI9341_GREEN, BG, "#=OK   *=Hapus");
+}
+
+void passwordScreen() {
+  String s = "";
+  bool dirty = true;
+  drawPasswordStatic();
+
+  while (true) {
+    updateLED();
+    if (dirty) {
+      char b[PASS_LEN + 1];
+      for (int i = 0; i < PASS_LEN; i++) b[i] = (i < (int)s.length()) ? '*' : '_';
+      b[PASS_LEN] = 0;
+      txt(112, 106, 4, ILI9341_YELLOW, BG, b);
+      dirty = false;
+    }
+
+    char k = keypad.getKey();
+    if (!k) continue;
+
+    if (k >= '0' && k <= '9') {
+      if ((int)s.length() < PASS_LEN) { s += k; dirty = true; }
+    } else if (k == '*') {
+      if (s.length()) { s.remove(s.length() - 1); dirty = true; }
+    } else if (k == '#') {
+      if (s == PASSWORD) {
+        msg("Password benar", "", 0, ILI9341_GREEN);
+        beep(1, 150);
+        delay(700);
+        return;
+      } else {
+        msg("Password salah!", "Coba lagi", 0, ILI9341_RED);
+        beep(2, 150);
+        delay(1000);
+        s = "";
+        drawPasswordStatic();
+        dirty = true;
+      }
+    }
+  }
+}
+
 // ---------- SENSOR ----------
 float readDistance() {                       // HC-SR04: jarak kucing
   digitalWrite(TRIG_PIN, LOW);  delayMicroseconds(2);
@@ -320,61 +532,47 @@ float readDistance() {                       // HC-SR04: jarak kucing
   return dur * 0.0343 / 2.0;
 }
 
-int foodPercent() {                          // slide potentiometer: level pakan
-  return map(analogRead(POT_PIN), 0, 4095, 0, 100);
-}
-
 // ---------- MAKAN OTOMATIS: BUKA SELAMA KUCING ADA ----------
 void refuse(const char* l1, const char* l2) {
   Serial.printf(">> DITOLAK: %s - %s\n", l1, l2);
-  pubEvent("refused", "kucing", 0, l1);
-  ledEating(false);                               // MERAH nyala, hijau mati
+  publishEvent("ditolak", "pakan habis");
+  updateLED();
   tft.fillScreen(BG);
   txt(10, 8, 3, ILI9341_RED, BG, l1);
   txt(10, 50, 2, ILI9341_WHITE, BG, l2);
   beep(2, 120);
-  for (int i = 0; i < 14; i++) { drawCat(2, catFrame++); showCat(110, 80); delay(120); }
+  for (int i = 0; i < 14; i++) { drawCat(2, catFrame++); showCat(110, 80); mqttTick(); delay(120); }
   needStatic = true;
 }
 
 void startEating() {
   eating = true;
-  eatStart = lastNearMs = millis();
+  eatStart = lastNearMs = lastConsume = millis();
   farSince = 0;
   leaveLeft = 0;
-  reqCount++;
-  setServo(true);                                 // BUKA katup + HIJAU konstan, merah mati
+  setServo(true);                                 // BUKA katup + HIJAU konstan
   beep(1, 150);
-  Serial.println(">> Kucing makan: servo BUKA");
-  pubEvent("start", "kucing", 0, "kucing mulai makan");
+  Serial.println(">> Servo BUKA");
+  publishEvent("kucing_makan", manualHold ? "servo dibuka manual" : "servo buka");
+  publishStatus();
 }
 
 void stopEating(const char* why) {
-  setServo(false);                                // TUTUP katup + MERAH konstan, hijau mati
+  manualHold = false;
+  setServo(false);                                // TUTUP katup + MERAH konstan
   eating = false;
   leaveLeft = 0;
-  lastFeedMs = millis();
-  markFed("kucing");
-  pubEvent("ate", "kucing", (int)((millis() - eatStart) / 1000), why);
   beep(2, 100);
   Serial.print(">> Servo TUTUP, alasan: ");
-  Serial.println(why);
+  Serial.print(why);
+  Serial.printf(" | sisa pakan %.1f g\n", pakanGram);
+  publishEvent("selesai_makan", why);
+  publishStatus();
 }
 
 void catRequest() {
-  if (foodPercent() <= 5) {
-    refuse("PAKAN HABIS!", "Isi wadah dulu");
-    return;
-  }
-  if (reqCount >= REQ_MAX) {
-    refuse("Jatah habis", "Besok lagi ya!");
-    return;
-  }
-  unsigned long since = millis() - lastFeedMs;
-  if (lastFeedMs != 0 && since < MIN_GAP_MS) {
-    char b[28];
-    snprintf(b, sizeof(b), "Tunggu %lu detik", (MIN_GAP_MS - since) / 1000 + 1);
-    refuse("Belum waktunya", b);
+  if (pakanHabis()) {
+    refuse("PAKAN HABIS!", "Isi: Menu > Tambah Pakan");
     return;
   }
   startEating();
@@ -385,26 +583,35 @@ void checkCat() {
   lastPing = millis();
   lastDist = readDistance();
 
-  if (millis() - lastLog > 1000) {                // log jarak ke Serial Monitor
+  if (millis() - lastLog > 1000) {
     lastLog = millis();
-    Serial.printf("Jarak: %.1f cm | %s\n", lastDist, eating ? "MAKAN" : "standby");
+    Serial.printf("Jarak: %.1f cm | %s | pakan %.1f g | MQTT %s\n",
+                  lastDist, eating ? "MAKAN" : "standby", pakanGram,
+                  mqtt.connected() ? "OK" : "putus");
   }
 
-  // --- sedang makan: servo tetap terbuka sampai kucing pergi ---
+  // --- sedang makan: servo terbuka, pakan berkurang ---
   if (eating) {
-    if (lastDist < CAT_LEAVE_CM) {
-      lastNearMs = millis();
-      leaveLeft = 0;
-    } else {
-      leaveLeft = (long)LEAVE_MS - (long)(millis() - lastNearMs);
-      if (leaveLeft <= 0) { stopEating("kucing pergi"); return; }
+    unsigned long nowMs = millis();
+    unsigned long dt = nowMs - lastConsume;
+    if (dt > 500) dt = 500;
+    lastConsume = nowMs;
+    pakanGram -= FLOW_G_PER_SEC * dt / 1000.0;
+    if (pakanGram < 0) pakanGram = 0;
+
+    if (!manualHold) {                            // kalau dibuka manual dari web, jangan tutup karena jarak
+      if (lastDist < CAT_LEAVE_CM) {
+        lastNearMs = millis();
+        leaveLeft = 0;
+      } else {
+        leaveLeft = (long)LEAVE_MS - (long)(millis() - lastNearMs);
+        if (leaveLeft <= 0) { stopEating("kucing pergi"); return; }
+      }
     }
     if (millis() - eatStart > MAX_EAT_MS)  stopEating("waktu makan habis");
-    else if (foodPercent() <= 5)           stopEating("pakan habis");
+    else if (pakanHabis())                 stopEating("pakan habis");
     return;
   }
-
-  if (remoteHold) return;                         // katup sedang dibuka manual dari HP
 
   // --- standby: tunggu kucing mendekat ---
   if (lastDist < CAT_NEAR_CM) {
@@ -419,57 +626,64 @@ void checkCat() {
   } else {
     nearSince = 0;
     catNear = false;
-    if (handled) {                                // kucing harus pergi dulu 1.5 dtk
+    if (handled) {
       if (farSince == 0) farSince = millis();
       if (millis() - farSince > 1500) handled = false;
     }
   }
 }
 
-// ---------- MAKAN TERUKUR (JADWAL / MANUAL / TES) ----------
+// ---------- MAKAN TERUKUR (JADWAL / MANUAL / TES / MQTT) ----------
 bool feed(const char* reason, int p) {
-  if (eating)     { pubEvent("refused", reason, 0, "kucing sedang makan"); return false; }
-  if (remoteHold) { pubEvent("refused", reason, 0, "katup sedang dibuka dari HP"); return false; }
+  if (eating) return false;
   tft.fillScreen(BG);
 
-  if (foodPercent() <= 5) {                       // pakan habis
-    ledEating(false);                             // MERAH nyala, hijau mati
-    pubEvent("refused", reason, 0, "pakan habis");
+  if (pakanHabis()) {
+    updateLED();
+    publishEvent("ditolak", "pakan habis");
     txt(30, 8, 3, ILI9341_RED, BG, "PAKAN HABIS!");
-    txt(50, 44, 2, ILI9341_WHITE, BG, "Isi wadah dulu");
+    txt(10, 44, 2, ILI9341_WHITE, BG, "Isi: Menu > Tambah Pakan");
     drawCat(2, 3); showCat(110, 80);
     beep(3, 300);
-    for (int i = 0; i < 8; i++) { drawCat(2, catFrame++); showCat(110, 80); delay(120); }
+    for (int i = 0; i < 8; i++) { drawCat(2, catFrame++); showCat(110, 80); mqttTick(); delay(120); }
     needStatic = true;
     return false;
   }
 
+  float gram = (float)p * GRAM_PER_PORSI;         // gram yang diminta
+  if (gram > pakanGram) gram = pakanGram;         // tidak boleh lebih dari stok
+  unsigned long durMs = (unsigned long)(gram / FLOW_G_PER_SEC * 1000.0);
+
   char b[30];
-  snprintf(b, sizeof(b), "%s - Porsi %d", reason, p);
+  snprintf(b, sizeof(b), "%s - %d gram", reason, (int)(gram + 0.5));
   txt(10, 8, 3, ILI9341_GREEN, BG, "Memberi makan");
   txt(10, 44, 2, ILI9341_WHITE, BG, b);
   txt(100, 190, 2, ILI9341_CYAN, BG, "Nyam nyam~");
 
-  setServo(true);                                 // BUKA katup + HIJAU konstan, merah mati
+  setServo(true);                                 // BUKA katup + HIJAU konstan
   beep(1, 300);
+  publishEvent("feed_mulai", reason);
+  publishStatus();
 
   unsigned long t0 = millis();
-  while (millis() - t0 < (unsigned long)p * 1000) {   // porsi x 1 detik
-    drawCat(1, catFrame++); showCat(110, 80); delay(100);
+  while (millis() - t0 < durMs) {
+    drawCat(1, catFrame++); showCat(110, 80); mqttTick(); delay(100);
   }
-  setServo(false);                                // TUTUP katup + MERAH konstan, hijau mati
-  for (int i = 0; i < 5; i++) { drawCat(1, catFrame++); showCat(110, 80); delay(100); }
+  setServo(false);                                // TUTUP katup + MERAH konstan
+  for (int i = 0; i < 5; i++) { drawCat(1, catFrame++); showCat(110, 80); mqttTick(); delay(100); }
 
-  lastFeedMs = millis();
-  markFed(reason);
-  pubEvent("fed", reason, p, "porsi selesai");
+  pakanGram -= gram;
+  if (pakanGram < 0) pakanGram = 0;
+
+  publishEvent("feed_selesai", reason);
+  publishStatus();
+
   needStatic = true;
   return true;
 }
 
 void checkSchedule() {
   DateTime now = rtc.now();
-  if (now.day() != lastDay) { lastDay = now.day(); reqCount = 0; }   // reset harian
   long key = (long)now.day() * 1440 + now.hour() * 60 + now.minute();
   for (int i = 0; i < 3; i++) {
     if (jadwal[i].on && jadwal[i].h == now.hour() && jadwal[i].m == now.minute()
@@ -481,6 +695,7 @@ void checkSchedule() {
 }
 
 // ---------- INPUT ANGKA (KEYPAD) ----------
+// Angka = ketik, # = OK, * = hapus 1 angka; kalau sudah kosong = batal (return -1)
 int readNumber(const char* title, int maxDigits) {
   String s = "";
   bool dirty = true;
@@ -488,8 +703,10 @@ int readNumber(const char* title, int maxDigits) {
   tft.fillRect(0, 0, 320, 30, ILI9341_NAVY);
   txt(10, 7, 2, ILI9341_WHITE, ILI9341_NAVY, title);
   tft.drawRect(60, 80, 200, 80, ILI9341_WHITE);
-  txt(10, 200, 2, ILI9341_GREEN, BG, "#=OK   *=Hapus/Batal");
+  txt(10, 200, 2, ILI9341_GREEN, BG, "#=OK  *=Hapus/Batal");
   while (true) {
+    updateLED();
+    mqttTick();
     if (dirty) {
       char b[8];
       String d = s + "_";
@@ -498,30 +715,135 @@ int readNumber(const char* title, int maxDigits) {
       dirty = false;
     }
     char k = keypad.getKey();
+
     if (k >= '0' && k <= '9' && (int)s.length() < maxDigits) { s += k; dirty = true; }
     else if (k == '#' && s.length() > 0) return s.toInt();
     else if (k == '*') {
       if (s.length()) { s.remove(s.length() - 1); dirty = true; }
-      else return -1;           // batal
+      else return -1;                             // batal
     }
   }
 }
 
+// ---------- MENU 1: TAMBAH PAKAN (GRAM) ----------
+void tambahPakan() {
+  int g = readNumber("Tambah pakan (gram)", 3);
+  if (g <= 0) { msg("Batal / invalid"); return; }
+
+  float ruang = MAX_GRAM - pakanGram;
+  if (ruang < 0.5) { msg("Wadah penuh!", "", 1500, ILI9341_RED); return; }
+
+  float tambah = (g > ruang) ? ruang : (float)g;
+  pakanGram += tambah;
+  publishEvent("tambah_pakan", "via menu");
+  publishStatus();
+
+  char a[24], b[28];
+  if (g > ruang) snprintf(a, sizeof(a), "Penuh! +%d g", (int)(tambah + 0.5));
+  else           snprintf(a, sizeof(a), "Pakan +%d g", g);
+  snprintf(b, sizeof(b), "Total %d/%d g", (int)(pakanGram + 0.5), (int)MAX_GRAM);
+  msg(a, b, 1800, ILI9341_GREEN);
+}
+
+// ---------- MENU 2: ATUR NAMA KUCING ----------
+// Joystick atas/bawah = ganti huruf, kiri/kanan = pindah kotak, # = simpan, * = batal
+void drawNameRow(const char* buf, int pos) {
+  const int cw = 36;
+  const int x0 = (320 - NAME_MAX * cw) / 2;
+  for (int i = 0; i < NAME_MAX; i++) {
+    int x = x0 + i * cw;
+    uint16_t col = (i == pos) ? ILI9341_CYAN : ILI9341_DARKGREY;
+    tft.fillRect(x, 80, cw - 4, 50, BG);
+    tft.drawRect(x, 80, cw - 4, 50, col);
+    if (i == pos) tft.drawRect(x + 1, 81, cw - 6, 48, col);
+    char c[2] = { buf[i], 0 };
+    txt(x + 7, 93, 3, ILI9341_YELLOW, BG, c);
+  }
+}
+
+void editNama() {
+  char buf[NAME_MAX + 1];
+  int len = strlen(namaKucing);
+  for (int i = 0; i < NAME_MAX; i++) buf[i] = (i < len) ? namaKucing[i] : ' ';
+  buf[NAME_MAX] = 0;
+  int pos = 0;
+  bool dirty = true;
+
+  tft.fillScreen(BG);
+  tft.fillRect(0, 0, 320, 30, ILI9341_NAVY);
+  txt(10, 7, 2, ILI9341_WHITE, ILI9341_NAVY, "NAMA KUCING");
+  txt(10, 150, 1, ILI9341_LIGHTGREY, BG, "Joystick atas/bawah: huruf");
+  txt(10, 162, 1, ILI9341_LIGHTGREY, BG, "Joystick kiri/kanan: pindah kotak");
+  txt(10, 195, 2, ILI9341_GREEN, BG, "#=Simpan  *=Batal");
+
+  waitIdle();
+
+  while (true) {
+    updateLED();
+    mqttTick();
+    if (dirty) { drawNameRow(buf, pos); dirty = false; }
+
+    char k = keypad.getKey();
+
+    if (joyUp()) {                                // atas = huruf berikutnya
+      int ci = strchr(CHARSET, buf[pos]) - CHARSET;
+      buf[pos] = CHARSET[(ci + 1) % NCHARS];
+      dirty = true; delay(180);
+    } else if (joyDown()) {                       // bawah = huruf sebelumnya
+      int ci = strchr(CHARSET, buf[pos]) - CHARSET;
+      buf[pos] = CHARSET[(ci + NCHARS - 1) % NCHARS];
+      dirty = true; delay(180);
+    } else if (joyRight()) {                      // kanan = kotak berikutnya
+      if (pos < NAME_MAX - 1) pos++;
+      dirty = true; waitIdle();
+    } else if (joyLeft()) {                       // kiri = kotak sebelumnya
+      if (pos > 0) pos--;
+      dirty = true; waitIdle();
+    }
+
+    if (k == '*') { msg("Batal", "", 800); return; }
+
+    if (k == '#') {                               // simpan
+      int last = NAME_MAX - 1;
+      while (last >= 0 && buf[last] == ' ') last--;
+      if (last < 0) { msg("Nama kosong!", "", 1200, ILI9341_RED); return; }
+      int first = 0;
+      while (buf[first] == ' ') first++;
+      int n = 0;
+      for (int i = first; i <= last; i++) namaKucing[n++] = buf[i];
+      namaKucing[n] = 0;
+      publishStatus();
+      msg("Nama tersimpan", namaKucing, 1500, ILI9341_GREEN);
+      return;
+    }
+  }
+}
+
+// ---------- MENU LAIN ----------
 void editJadwal(int i) {
   int h = readNumber("Jam (0-23)", 2);   if (h < 0 || h > 23) { msg("Batal / invalid"); return; }
   int m = readNumber("Menit (0-59)", 2); if (m < 0 || m > 59) { msg("Batal / invalid"); return; }
   int a = readNumber("Aktif? 1=Ya 0=Tidak", 1); if (a < 0) return;
   jadwal[i] = {h, m, a == 1};
+  publishStatus();
   msg("Jadwal tersimpan", "", 1200, ILI9341_GREEN);
 }
 
 bool doItem(int idx) {          // return true = keluar menu
   switch (idx) {
-    case 0: case 1: case 2: editJadwal(idx); break;
-    case 3: { int p = readNumber("Porsi (1-5)", 1);
-              if (p >= 1 && p <= 5) { porsi = p; msg("Porsi tersimpan", "", 1200, ILI9341_GREEN); }
-              else msg("Invalid"); break; }
-    case 4: { int h = readNumber("Set Jam (0-23)", 2);
+    case 0: tambahPakan(); break;
+    case 1: editNama(); break;
+    case 2: case 3: case 4: editJadwal(idx - 2); break;
+    case 5: { int p = readNumber("Porsi (1-5)", 1);
+              if (p >= 1 && p <= 5) {
+                porsi = p;
+                publishStatus();
+                char b[24];
+                snprintf(b, sizeof(b), "= %d gram", p * GRAM_PER_PORSI);
+                msg("Porsi tersimpan", b, 1500, ILI9341_GREEN);
+              } else msg("Invalid");
+              break; }
+    case 6: { int h = readNumber("Set Jam (0-23)", 2);
               int m = readNumber("Set Menit (0-59)", 2);
               if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
                 DateTime n = rtc.now();
@@ -529,52 +851,46 @@ bool doItem(int idx) {          // return true = keluar menu
                 msg("Jam diupdate", "", 1200, ILI9341_GREEN);
               } else msg("Invalid");
               break; }
-    case 5: feed("Tes", porsi); break;
-    case 6: return true;
+    case 7: feed("Tes", porsi); break;
+    case 8: return true;
   }
   return false;
 }
 
-// ---------- MENU (JOYSTICK) ----------
+// ---------- MENU ----------
+// Joystick ATAS/BAWAH = gerakkan pilihan, # = masuk, * = kembali
 void drawMenuRow(int i, bool sel) {
-  int y = 36 + i * 28;
+  int y = 34 + i * 22;
   uint16_t bg = sel ? ILI9341_CYAN : BG;
-  tft.fillRect(0, y, 320, 26, bg);
-  txt(12, y + 5, 2, sel ? ILI9341_BLACK : ILI9341_WHITE, bg, items[i]);
+  tft.fillRect(0, y, 320, 21, bg);
+  txt(12, y + 3, 2, sel ? ILI9341_BLACK : ILI9341_WHITE, bg, items[i]);
 }
 
 void drawMenuFull(int idx) {
   tft.fillScreen(BG);
   tft.fillRect(0, 0, 320, 30, ILI9341_NAVY);
   txt(10, 7, 2, ILI9341_WHITE, ILI9341_NAVY, "MENU");
-  txt(90, 12, 1, ILI9341_WHITE, ILI9341_NAVY, "atas/bawah=pilih  kanan=OK  kiri=keluar");
+  txt(80, 12, 1, ILI9341_WHITE, ILI9341_NAVY, "joystick=pilih  #=OK  *=kembali");
   for (int i = 0; i < NITEMS; i++) drawMenuRow(i, i == idx);
-}
-
-void waitCenter() {
-  while (analogRead(JOY_X) > 3000 || analogRead(JOY_X) < 1000) delay(20);
-  delay(100);
 }
 
 void menu() {
   int idx = 0;
-  waitCenter();
+  waitIdle();
   drawMenuFull(idx);
   while (true) {
-    int y = analogRead(JOY_Y), x = analogRead(JOY_X);
+    updateLED();
+    mqttTick();
     int old = idx;
-    if (y < 1000)      idx = (idx + NITEMS - 1) % NITEMS;
-    else if (y > 3000) idx = (idx + 1) % NITEMS;
+    if (joyUp())        idx = (idx + NITEMS - 1) % NITEMS;   // ATAS = naik
+    else if (joyDown()) idx = (idx + 1) % NITEMS;            // BAWAH = turun
     if (idx != old) { drawMenuRow(old, false); drawMenuRow(idx, true); delay(200); }
 
-    if (x > 3000) {                       // kanan = pilih
-      waitCenter();
+    char k = keypad.getKey();
+    if (k == '#') {                               // # = masuk menu yang dipilih
       if (doItem(idx)) return;
-      waitCenter();
       drawMenuFull(idx);
-    }
-    if (x < 1000 || keypad.getKey() == '*') {   // kiri / * = keluar
-      waitCenter();
+    } else if (k == '*') {                        // * = kembali
       return;
     }
   }
@@ -596,6 +912,10 @@ void updateMain() {
   int pct = foodPercent();
   char b[34], n[34];
 
+  // indikator MQTT di header
+  bool on = mqtt.connected();
+  txt(272, 11, 1, on ? ILI9341_GREEN : ILI9341_RED, ILI9341_NAVY, on ? "MQTT:OK" : "MQTT:--");
+
   // jam besar
   snprintf(b, sizeof(b), "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
   txt(8, 40, 4, ILI9341_YELLOW, BG, b);
@@ -604,7 +924,7 @@ void updateMain() {
   snprintf(b, sizeof(b), "%02d/%02d/%04d", now.day(), now.month(), now.year());
   txt(8, 82, 2, ILI9341_CYAN, BG, b);
 
-  // jarak kucing + status servo (dengan hitung mundur tutup)
+  // jarak kucing + status servo
   int d = (int)lastDist; if (d > 400) d = 400;
   snprintf(b, sizeof(b), "Jrk:%3dcm  ", d);
   txt(140, 82, 1, ILI9341_LIGHTGREY, BG, b);
@@ -615,15 +935,16 @@ void updateMain() {
   else                    snprintf(sv, sizeof(sv), "Servo:BUKA    ");
   txt(140, 93, 1, eating ? ILI9341_GREEN : ILI9341_LIGHTGREY, BG, sv);
 
-  // status kucing
+  // status kucing (dengan nama)
   catMood = eating ? 1 : (pct < 20 ? 2 : 0);
-  const char* ms = eating ? "Kucing MAKAN~" :
-                   (pct <= 5 ? "Pakan habis!" :
-                   (pct < 20 ? "Lapar nih...!" :
-                   (catNear ? "Kucing datang!" : "Kucing santai")));
+  const char* st = eating ? "makan~" :
+                   (pakanHabis() ? "habis!" :
+                   (pct < 20 ? "lapar!" :
+                   (catNear ? "datang!" : "santai")));
   uint16_t mc = eating ? ILI9341_GREEN :
                 (pct < 20 ? ILI9341_RED : (catNear ? ILI9341_YELLOW : ILI9341_GREEN));
-  snprintf(b, sizeof(b), "%-15s", ms);
+  snprintf(n, sizeof(n), "%s %s", namaKucing, st);
+  snprintf(b, sizeof(b), "%-16s", n);
   txt(8, 106, 2, mc, BG, b);
 
   // jadwal berikutnya
@@ -640,12 +961,13 @@ void updateMain() {
   snprintf(b, sizeof(b), "%-26s", n);
   txt(0, 136, 2, ILI9341_WHITE, BG, b);
 
-  // level pakan
-  snprintf(n, sizeof(n), "Pakan: %d%%  Minta:%d/%d", pct, reqCount, REQ_MAX);
+  // level pakan (gram)
+  snprintf(n, sizeof(n), "Pakan: %d/%d g", (int)(pakanGram + 0.5), (int)MAX_GRAM);
   snprintf(b, sizeof(b), "%-26s", n);
   txt(0, 158, 2, pct < 20 ? ILI9341_RED : ILI9341_WHITE, BG, b);
 
-  int w = pct * 296 / 100;
+  int w = (int)(pakanGram * 296.0 / MAX_GRAM);
+  w = constrain(w, 0, 296);
   uint16_t c = pct >= 50 ? ILI9341_GREEN : (pct >= 20 ? ILI9341_YELLOW : ILI9341_RED);
   tft.fillRect(12, 182, w, 18, c);
   tft.fillRect(12 + w, 182, 296 - w, 18, BG);
@@ -662,107 +984,21 @@ void updateMain() {
   }
 }
 
-// ---------- MQTT ----------
-void onMqtt(char* topic, byte* payload, unsigned int len) {
-  String m;
-  for (unsigned int i = 0; i < len; i++) m += (char)payload[i];
-  Serial.printf("MQTT cmd: %s\n", m.c_str());
-  if (pendingCmd.length() == 0) pendingCmd = m;     // dijalankan di loop() (bukan di callback)
-}
-
-// Perintah dari website:
-//   feed | feed:N | servo:open | servo:close | porsi:N | sched:i,h,m,on | time:h,m | beep
-void runCmd(String c) {
-  Serial.printf("CMD: %s\n", c.c_str());
-  if (c == "feed" || c.startsWith("feed:")) {
-    int p = c.length() > 5 ? c.substring(5).toInt() : porsi;
-    if (p < 1 || p > 5) p = porsi;
-    feed("HP", p);
-  } else if (c == "servo:open") {
-    if (eating)                { pubEvent("refused", "HP", 0, "kucing sedang makan"); return; }
-    if (foodPercent() <= 5)    { pubEvent("refused", "HP", 0, "pakan habis"); return; }
-    remoteHold = true; remoteStart = millis();
-    setServo(true);
-    beep(1, 150);
-    pubEvent("servo", "HP", 1, "katup dibuka dari HP");
-  } else if (c == "servo:close") {
-    if (!remoteHold) return;
-    remoteHold = false;
-    setServo(false);
-    beep(2, 100);
-    lastFeedMs = millis();
-    markFed("HP");
-    pubEvent("servo", "HP", 0, "katup ditutup, pakan sudah keluar");
-  } else if (c.startsWith("porsi:")) {
-    int p = c.substring(6).toInt();
-    if (p >= 1 && p <= 5) porsi = p;
-  } else if (c.startsWith("sched:")) {
-    int i, h, m, on;
-    if (sscanf(c.c_str() + 6, "%d,%d,%d,%d", &i, &h, &m, &on) == 4 &&
-        i >= 0 && i < 3 && h >= 0 && h < 24 && m >= 0 && m < 60) {
-      jadwal[i] = {h, m, on == 1};
-    }
-  } else if (c.startsWith("time:")) {
-    int h, m;
-    if (sscanf(c.c_str() + 5, "%d,%d", &h, &m) == 2 && h >= 0 && h < 24 && m >= 0 && m < 60) {
-      DateTime n = rtc.now();
-      rtc.adjust(DateTime(n.year(), n.month(), n.day(), h, m, 0));
-    }
-  } else if (c == "beep") {
-    beep(2, 150);
+// ---------- WIFI ----------
+void wifiConnect() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS, WIFI_CH);
+  Serial.print("[WiFi] konek");
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 12000) {
+    splashAnim(1, "Konek WiFi...", false);
+    Serial.print(".");
   }
-  lastPub = 0;                                       // kirim status terbaru segera
-}
-
-void mqttLoop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    if (millis() - lastMqttTry > 10000) { lastMqttTry = millis(); WiFi.begin(WIFI_SSID, WIFI_PASS); }
-    return;
-  }
-  if (!mqtt.connected()) {
-    if (millis() - lastMqttTry < 5000) return;
-    lastMqttTry = millis();
-    String cid = "smartcat-esp32-" + String((uint32_t)ESP.getEfuseMac(), HEX);
-    if (mqtt.connect(cid.c_str(), MQTT_USER, MQTT_PASS, TOPIC_ONLINE, 1, true, "0")) {
-      mqtt.publish(TOPIC_ONLINE, "1", true);
-      mqtt.subscribe(TOPIC_CMD);
-      Serial.println("MQTT terhubung");
-    } else {
-      Serial.printf("MQTT gagal, rc=%d\n", mqtt.state());
-    }
-    return;
-  }
-  mqtt.loop();
-
-  if (millis() - lastPub > 2000) {
-    lastPub = millis();
-    DateTime now = rtc.now();
-    int pct = foodPercent();
-
-    // peringatan pakan menipis / habis (sekali per turun)
-    if (pct <= 5 && lowState < 2)       { lowState = 2; pubEvent("empty", "sensor", pct, "pakan habis"); }
-    else if (pct < 20 && lowState < 1)  { lowState = 1; pubEvent("low", "sensor", pct, "pakan menipis"); }
-    else if (pct >= 30)                 { lowState = 0; }
-
-    long rleft = remoteHold ? (long)(REMOTE_MAX_MS - (millis() - remoteStart)) / 1000 : 0;
-    if (rleft < 0) rleft = 0;
-
-    char j[700];
-    snprintf(j, sizeof(j),
-      "{\"ts\":%lu,\"boot\":%lu,\"last\":%lu,\"src\":\"%s\","
-      "\"time\":\"%02d:%02d:%02d\",\"date\":\"%02d/%02d/%04d\",\"dist\":%.0f,\"food\":%d,"
-      "\"eating\":%s,\"servo\":\"%s\",\"remote\":%s,\"rleft\":%ld,"
-      "\"req\":%d,\"maxreq\":%d,\"porsi\":%d,"
-      "\"sched\":[{\"h\":%d,\"m\":%d,\"on\":%d},{\"h\":%d,\"m\":%d,\"on\":%d},{\"h\":%d,\"m\":%d,\"on\":%d}]}",
-      (unsigned long)now.unixtime(), (unsigned long)bootTs, (unsigned long)lastFeedTs, lastSrc,
-      now.hour(), now.minute(), now.second(), now.day(), now.month(), now.year(),
-      lastDist, pct, eating ? "true" : "false", servoOpen ? "BUKA" : "TUTUP",
-      remoteHold ? "true" : "false", rleft,
-      reqCount, REQ_MAX, porsi,
-      jadwal[0].h, jadwal[0].m, jadwal[0].on ? 1 : 0,
-      jadwal[1].h, jadwal[1].m, jadwal[1].on ? 1 : 0,
-      jadwal[2].h, jadwal[2].m, jadwal[2].on ? 1 : 0);
-    mqtt.publish(TOPIC_STATUS, j, true);
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\n[WiFi] OK, IP %s\n", WiFi.localIP().toString().c_str());
+    configTime(7 * 3600, 0, "pool.ntp.org", "time.google.com");   // WIB, dipakai untuk validasi sertifikat
+  } else {
+    Serial.println("\n[WiFi] gagal (alat tetap jalan offline)");
   }
 }
 
@@ -773,12 +1009,15 @@ void setup() {
   pinMode(BTN_PIN, INPUT_PULLUP);
   pinMode(LED_R, OUTPUT); pinMode(LED_G, OUTPUT);
   pinMode(BUZZ_PIN, OUTPUT);
-  ledEating(false);                              // awal: servo tutup -> MERAH nyala, hijau mati
+  servoOpen = false;
+  updateLED();                                   // awal: MERAH konstan, hijau mati
 
   Wire.begin(21, 22);
   tft.begin();
   tft.setRotation(1);           // landscape 320x240
   pinMode(ECHO_PIN, INPUT);     // set SETELAH tft.begin() supaya pin 19 tetap input biasa
+
+  passwordScreen();             // minta password dulu (1010)
 
   splashStatic();
   splashAnim(6, "Memulai...", false);
@@ -789,30 +1028,32 @@ void setup() {
 
   if (!rtc.begin()) { msg("RTC ERROR!", "", 0, ILI9341_RED); while (1); }
   if (!rtc.isrunning()) rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-  lastDay = rtc.now().day();
-  bootTs = rtc.now().unixtime();
 
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  netClient.setInsecure();                       // tanpa verifikasi sertifikat (cukup untuk demo)
+  // --- WiFi + MQTT ---
+  wifiConnect();
+#if USE_INSECURE
+  netClient.setInsecure();
+#else
+  netClient.setCACert(CA_CERT);
+#endif
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(onMqtt);
-  mqtt.setBufferSize(1024);
   mqtt.setKeepAlive(30);
+  mqtt.setBufferSize(512);
+  splashAnim(2, "Konek MQTT...", false);
+  mqttConnect();
 
-  splashAnim(8, "Cek sensor...", false);
-  splashAnim(12, "Siap!", true);
+  splashAnim(5, "Cek sensor...", false);
+  splashAnim(8, "Siap!", true);
   delay(500);
 }
 
 void loop() {
   if (needStatic) { drawStatic(); needStatic = false; lastScreen = 0; lastCat = 0; }
 
-  mqttLoop();                                 // kirim status / terima perintah dari HP
-  if (pendingCmd.length()) { String c = pendingCmd; pendingCmd = ""; runCmd(c); }
-  if (remoteHold && millis() - remoteStart > REMOTE_MAX_MS) runCmd("servo:close");   // pengaman
-
   checkCat();                                 // deteksi kucing + kontrol servo
-  ledEating(servoOpen);                      // buka = HIJAU konstan (merah mati); tutup = MERAH konstan (hijau mati)
+  updateLED();                                // buka = HIJAU konstan; tutup = MERAH konstan
+  mqttHandle();                               // koneksi MQTT + kirim status
 
   if (millis() - lastScreen > 500) { lastScreen = millis(); updateMain(); }
 
@@ -824,13 +1065,28 @@ void loop() {
 
   checkSchedule();
 
+  if (pendFeed > 0 && !eating) {              // perintah feed dari web/MQTT
+    int p = pendFeed;
+    pendFeed = 0;
+    feed("MQTT", p);
+  }
+
+  if (pendServo == 1) {                       // BUKA dari web
+    pendServo = 0;
+    if (!eating && !pakanHabis()) { manualHold = true; startEating(); }
+    else if (pakanHabis()) publishEvent("ditolak", "pakan habis");
+  } else if (pendServo == 2) {                // TUTUP dari web
+    pendServo = 0;
+    if (eating) stopEating("ditutup manual");
+  }
+
   if (digitalRead(BTN_PIN) == LOW && millis() - lastManual > 10000) {   // cooldown 10 dtk
     lastManual = millis();
     feed("Manual", porsi);
   }
 
   char k = keypad.getKey();
-  if (k == '*' || analogRead(JOY_X) > 3000) {   // masuk menu
+  if (k == '#') {                             // # = buka menu
     menu();
     needStatic = true;
   }
