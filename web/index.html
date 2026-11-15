@@ -111,7 +111,7 @@
         <div class="row"><span>🍽️ Terakhir makan</span><b id="lastFed">-</b></div>
         <div class="row"><span>Katup servo</span><b id="servo">-</b></div>
         <div class="row"><span>Jarak kucing</span><b id="dist">-</b></div>
-        <div class="row"><span>Sesi minta hari ini</span><b id="req">-</b></div>
+        <div class="row"><span>Nama kucing</span><b id="nama">-</b></div>
       </div>
       <div class="card">
         <div style="display:flex;justify-content:space-between"><span>Level pakan</span><b id="foodTxt">-</b></div>
@@ -131,7 +131,7 @@
       </div>
       <div class="card">
         <h2>Gerakkan servo manual</h2>
-        <p class="sub">Buka katup selama Anda mau. Demi keamanan, katup menutup sendiri setelah 30 detik.</p>
+        <p class="sub">Buka katup selama Anda mau. Demi keamanan, katup menutup sendiri jika pakan habis atau setelah 60 detik.</p>
         <div class="row"><span>Status katup</span><b id="servo2">-</b></div>
         <div class="grid2" style="margin-top:10px">
           <button id="openBtn" class="green" disabled>🔓 Buka</button>
@@ -140,11 +140,18 @@
         <div class="sub" id="remoteLeft" style="margin-top:8px" hidden></div>
       </div>
       <div class="card">
+        <h2>Nama kucing</h2>
+        <input id="namaIn" type="text" maxlength="8" placeholder="Maks 8 huruf/angka" autocapitalize="characters">
+        <button id="namaBtn" class="alt" disabled>Simpan nama</button>
+      </div>
+      <div class="card">
+        <h2>Tambah pakan</h2>
+        <input id="gramIn" type="number" min="1" max="100" inputmode="numeric" placeholder="Gram (maks 100)">
+        <button id="gramBtn" class="alt" disabled>Tambah pakan</button>
+      </div>
+      <div class="card">
         <h2>Alat</h2>
-        <div class="grid2">
-          <button id="beepBtn" class="alt" disabled>🔔 Bunyikan buzzer</button>
-          <button id="syncBtn" class="alt" disabled>🕒 Samakan jam</button>
-        </div>
+        <button id="syncBtn" class="alt" disabled>🕒 Samakan jam</button>
         <p class="sub" style="margin-bottom:0">"Samakan jam" mengatur jam RTC alat sesuai jam HP ini.</p>
       </div>
     </section>
@@ -188,7 +195,8 @@
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script>
 const HOST = "wss://ge188d00.ala.asia-southeast1.emqxsl.com:8084/mqtt";
-const T_STATUS="smartcat/status", T_CMD="smartcat/cmd", T_ONLINE="smartcat/online", T_EVENT="smartcat/event";
+const BASE="smartcat/feeder01/";
+const T_STATUS=BASE+"status", T_ONLINE=BASE+"online", T_EVENT=BASE+"event";
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -211,8 +219,8 @@ function fmtDur(sec){
   const h = Math.floor(sec/3600), m = Math.floor(sec%3600/60);
   return h + " jam" + (m ? " " + m + " mnt" : "");
 }
-function nowDev(){ return S ? S.ts + (Date.now()-rx)/1000 : 0; }   // waktu alat (unix) diperkirakan
-function hhmm(ts){ const d=new Date(ts*1000); return String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0"); }
+function nowDev(){ return Date.now()/1000; }   // pakai jam HP
+function hhmm(ts){ const d=new Date(ts*1000); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
 
 let audioCtx=null;
 function beep(freq=880, ms=180, n=1){
@@ -262,16 +270,15 @@ function renderEvents(){
 
 const SRC = { kucing:"oleh kucing", Jadwal:"jadwal otomatis", Manual:"tombol di alat", HP:"dari HP", Tes:"tes", sensor:"sensor" };
 function handleEvent(e){
-  const src = SRC[e.src] || e.src;
-  switch(e.type){
-    case "start":   notify("ok","😺","Kucing mulai makan","Katup terbuka"); break;
-    case "ate":     notify("ok","✅","Kucing sudah makan", `Makan selama ${fmtDur(e.val)} (${e.txt})`); break;
-    case "fed":     notify("ok","✅","Pakan sudah diberikan", `${src}, ${e.val} porsi`); break;
-    case "servo":   notify(e.val ? "warn":"ok", e.val ? "🔓":"🔒", e.txt.charAt(0).toUpperCase()+e.txt.slice(1)); break;
-    case "refused": notify("warn","⚠️","Pemberian pakan ditolak", `${src}: ${e.txt}`); break;
-    case "low":     notify("warn","🥣","Pakan menipis", `Sisa ${e.val}%, segera isi wadah`); break;
-    case "empty":   notify("bad","🚨","Pakan habis!", "Isi wadah pakan sekarang"); break;
+  switch(e.event){
+    case "kucing_makan":  notify("ok","😺","Kucing mulai makan","Katup terbuka"); break;
+    case "selesai_makan": notify("ok","✅","Kucing selesai makan", e.detail); break;
+    case "feed_mulai":    notify("ok","🍽️","Pemberian makan dimulai", e.detail); break;
+    case "feed_selesai":  notify("ok","✅","Pakan sudah diberikan", e.detail); break;
+    case "tambah_pakan":  notify("ok","🥣","Pakan ditambah", e.detail); break;
+    case "ditolak":       notify("warn","⚠️","Pemberian pakan ditolak", e.detail); break;
   }
+  if (S && (e.event==="kucing_makan" || e.event==="feed_mulai")) S.last = Date.now()/1000;
 }
 
 /* ---------- tampilan ---------- */
@@ -282,7 +289,7 @@ function setConn(){
   else if (!deviceOnline) { e.textContent="alat offline"; e.className="pill"; }
   else { e.textContent="online"; e.className="pill on"; }
   const ok = on && deviceOnline;
-  ["quickFeed","feedBtn","openBtn","closeBtn","beepBtn","syncBtn","savePorsi"].forEach(id=>$(id).disabled=!ok);
+  ["quickFeed","feedBtn","openBtn","closeBtn","namaBtn","gramBtn","syncBtn","savePorsi"].forEach(id=>$(id).disabled=!ok);
   if (wasOnline && !deviceOnline && on) notify("bad","📡","Alat offline","ESP32 tidak terhubung ke broker");
   if (!wasOnline && deviceOnline && S) notify("ok","📡","Alat kembali online");
   wasOnline = deviceOnline;
@@ -312,16 +319,16 @@ function renderStatus(){
   $("time").textContent=d.time; $("date").textContent=d.date;
   $("servo").textContent=d.servo; $("servo2").textContent=d.servo + (d.remote ? " (manual)" : "");
   $("dist").textContent = d.dist>=400 ? "—" : d.dist+" cm";
-  $("req").textContent = d.req+" / "+d.maxreq;
+  $("nama").textContent = d.nama;
   const ref = Math.max(d.last, d.boot);
   $("lastFed").textContent = d.last ? fmtDur(nowDev()-d.last)+" lalu" : "belum sejak alat nyala";
-  $("foodTxt").textContent = d.food+"%"+(d.food<=5?" — HABIS":d.food<20?" — menipis":"");
+  $("foodTxt").textContent = d.food+"% ("+Math.round(d.gram)+" g)"+(d.food<=5?" — HABIS":d.food<20?" — menipis":"");
   const b=$("foodBar"); b.style.width=d.food+"%"; b.style.background=d.food>=50?"var(--ok)":d.food>=20?"var(--warn)":"var(--bad)";
   $("porsiS").textContent=d.porsi;
   const eatingNow = d.eating || d.servo==="BUKA";
   $("face").textContent = eatingNow ? "😸" : hungry ? "😿" : "😺";
   $("catTitle").textContent = d.eating ? "Kucing sedang makan" : d.servo==="BUKA" ? "Katup terbuka" : hungry ? "Kucing mungkin lapar" : "Kucing kenyang & santai";
-  $("catSub").textContent = d.last ? "Terakhir makan "+hhmm(d.last)+" ("+(SRC[d.src]||d.src)+")" : "Belum ada catatan makan";
+  $("catSub").textContent = d.last ? "Terakhir makan "+hhmm(d.last) : "Belum ada catatan makan";
   const rl=$("remoteLeft");
   rl.hidden = !d.remote; rl.textContent = d.remote ? "Menutup otomatis dalam "+d.rleft+" dtk" : "";
   renderSched(false);
@@ -343,7 +350,7 @@ function renderSched(force){
       const i=+btn.dataset.save, t=box.querySelector(`[data-t="${i}"]`).value, on=box.querySelector(`[data-on="${i}"]`).checked;
       if (!t) return toast("Isi jamnya dulu","warn");
       const [h,m]=t.split(":").map(Number);
-      send(`sched:${i},${h},${m},${on?1:0}`, "Jadwal "+(i+1)+" disimpan");
+      send("jadwal/"+(i+1), on ? t : "OFF", "Jadwal "+(i+1)+" disimpan");
       schedDirty[i]=false; btn.disabled=true;
     });
   }
@@ -356,17 +363,29 @@ function renderSched(force){
 }
 
 function handleStatus(d){
-  const prevLast = S ? S.last : null;
-  S = d; rx = Date.now();
-  if (prevLast === null) { porsiSel = d.porsi; $("pVal").textContent = porsiSel; lastSeenFeed = d.last; }
-  if (d.last !== lastSeenFeed) { lastSeenFeed = d.last; hungryNotified=false; }
+  const prev = S, now = Date.now()/1000;
+  S = {
+    nama:d.nama, gram:d.pakan, food:d.persen, servo:d.servo, eating:!!d.makan,
+    dist:d.jarak, porsi:d.porsi, time:d.jam, date:new Date().toLocaleDateString("id-ID"),
+    sched:(d.jadwal||[]).map((x,i)=>{
+      const m=/^(\d\d):(\d\d)$/.exec(x);
+      if (m) return {h:+m[1], m:+m[2], on:1};
+      const o=prev && prev.sched[i];
+      return {h:o?o.h:7, m:o?o.m:0, on:0};
+    }),
+    last: prev ? prev.last : 0, boot: prev ? prev.boot : now,
+    remote:false, rleft:0
+  };
+  rx = Date.now();
+  if (!prev) { porsiSel = d.porsi; $("pVal").textContent = porsiSel; $("namaIn").value = d.nama; }
+  else if (S.eating && !prev.eating) { S.last = now; hungryNotified=false; }
   renderStatus();
 }
 
 /* ---------- MQTT ---------- */
-function send(cmd, okMsg){
+function send(name, val, okMsg){
   if (!client || !client.connected || !deviceOnline) return toast("Alat sedang offline","bad");
-  client.publish(T_CMD, cmd);
+  client.publish(BASE+"cmd/"+name, String(val), {qos:1});
   if (okMsg) toast(okMsg, "ok");
 }
 
@@ -382,7 +401,7 @@ function connect(user, pass){
   });
   client.on("message", (t,m)=>{
     const s=m.toString();
-    if (t===T_ONLINE) { deviceOnline = s==="1"; setConn(); }
+    if (t===T_ONLINE) { deviceOnline = s==="online"; setConn(); }
     else if (t===T_STATUS) { try { handleStatus(JSON.parse(s)); } catch(e){} }
     else if (t===T_EVENT) { try { handleEvent(JSON.parse(s)); } catch(e){} }
   });
@@ -397,18 +416,27 @@ function connect(user, pass){
 
 /* ---------- aksi tombol ---------- */
 function feedNow(p){
-  send("feed:"+p, "Perintah makan ("+p+" porsi) dikirim");
+  send("feed", p, "Perintah makan ("+p+" porsi) dikirim");
   ["quickFeed","feedBtn"].forEach(id=>{ $(id).disabled=true; setTimeout(()=>setConn(), 5000); });
 }
 $("quickFeed").onclick = ()=>feedNow(porsiSel);
 $("feedBtn").onclick   = ()=>feedNow(porsiSel);
 $("pMinus").onclick = ()=>{ porsiSel=Math.max(1,porsiSel-1); $("pVal").textContent=porsiSel; };
 $("pPlus").onclick  = ()=>{ porsiSel=Math.min(5,porsiSel+1); $("pVal").textContent=porsiSel; };
-$("savePorsi").onclick = ()=>send("porsi:"+porsiSel, "Porsi jadwal jadi "+porsiSel);
-$("openBtn").onclick  = ()=>send("servo:open");
-$("closeBtn").onclick = ()=>send("servo:close");
-$("beepBtn").onclick  = ()=>send("beep","Buzzer dibunyikan");
-$("syncBtn").onclick  = ()=>{ const d=new Date(); send(`time:${d.getHours()},${d.getMinutes()}`, "Jam alat disamakan dengan HP"); };
+$("savePorsi").onclick = ()=>send("porsi", porsiSel, "Porsi jadwal jadi "+porsiSel);
+$("openBtn").onclick  = ()=>send("servo", "BUKA", "Perintah buka dikirim");
+$("closeBtn").onclick = ()=>send("servo", "TUTUP", "Perintah tutup dikirim");
+$("namaBtn").onclick  = ()=>{
+  const n=$("namaIn").value.trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8);
+  if (!n) return toast("Isi nama dulu (huruf/angka)","warn");
+  $("namaIn").value=n; send("nama", n, "Nama diganti jadi "+n);
+};
+$("gramBtn").onclick  = ()=>{
+  const g=Math.floor(+$("gramIn").value);
+  if (!(g>=1 && g<=100)) return toast("Isi gram 1-100","warn");
+  send("pakan", g, "Tambah pakan "+g+" g dikirim"); $("gramIn").value="";
+};
+$("syncBtn").onclick  = ()=>{ const d=new Date(), p=n=>String(n).padStart(2,"0"); send("jam", p(d.getHours())+":"+p(d.getMinutes()), "Jam alat disamakan dengan HP"); };
 
 $("hungryMin").value = settings.hungryMin;
 $("hungryMin").onchange = ()=>{ const v=Math.max(1,Math.min(1440,+$("hungryMin").value||360)); settings.hungryMin=v; $("hungryMin").value=v; store.set("hungryMin",String(v)); hungryNotified=false; renderAlerts(); };

@@ -16,7 +16,7 @@ const char* WIFI_PASS = "";
 const int   WIFI_CH   = 6;               // channel khusus Wokwi (di board asli hapus argumen ini)
 
 // ---------- MQTT (EMQX CLOUD SERVERLESS) ----------
-const char* MQTT_HOST = "mf661d1f.ala.asia-southeast1.emqxsl.com";
+const char* MQTT_HOST = "ge188d00.ala.asia-southeast1.emqxsl.com";
 const int   MQTT_PORT = 8883;            // MQTT over TLS
 const char* MQTT_USER = "catfeeder";     // <-- GANTI: user dari EMQX > Authentication
 const char* MQTT_PASS = "catfeeder123"; // <-- GANTI
