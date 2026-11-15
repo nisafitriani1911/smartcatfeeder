@@ -242,7 +242,8 @@ void mqttConnect() {
   if (millis() - lastMqttTry < 5000 && lastMqttTry != 0) return;
   lastMqttTry = millis();
 
-  String cid = "catfeeder-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+  // ID acak per boot: di Wokwi MAC selalu sama, ID kembar membuat dua simulasi saling menendang
+  static String cid = "catfeeder-" + String((uint32_t)esp_random(), HEX);
   Serial.print("[MQTT] connect... ");
   // Last Will: kalau ESP32 mati, broker otomatis kirim "offline"
   if (mqtt.connect(cid.c_str(), MQTT_USER, MQTT_PASS, T_ONLINE, 1, true, "offline")) {

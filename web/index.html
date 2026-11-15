@@ -3,487 +3,485 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#e8842c">
+<meta name="theme-color" content="#2b1d10">
 <title>Smart Cat Feeder</title>
 <style>
-  :root { --bg:#f6f3ee; --card:#fff; --ink:#1f2328; --mute:#6b7280; --line:#e8e3da;
-          --ok:#1f9d55; --warn:#d99a00; --bad:#d64545; --acc:#e8842c; --accInk:#fff; --soft:#f1ece3; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#14120f; --card:#1e1b17; --ink:#f1ece4; --mute:#a09a90; --line:#2e2a24; --soft:#27231d; }
-  }
-  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html,body { margin:0; background:var(--bg); color:var(--ink);
-              font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  main { max-width:520px; margin:0 auto; padding:14px 16px calc(92px + env(safe-area-inset-bottom)); }
-  header { display:flex; justify-content:space-between; align-items:center; margin:2px 0 12px; }
-  h1 { font-size:19px; margin:0; }
-  h2 { font-size:15px; margin:0 0 10px; }
-  .pill { font-size:12px; padding:4px 11px; border-radius:99px; background:var(--line); color:var(--mute); white-space:nowrap; }
-  .pill.on { background:var(--ok); color:#fff; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; margin-bottom:12px; }
-  .sub { color:var(--mute); font-size:13px; }
-  .row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
-  .row:first-of-type { border-top:0; }
-  .time { font-size:40px; font-weight:700; letter-spacing:1px; line-height:1.1; }
-  .bar { height:16px; border-radius:8px; background:var(--line); overflow:hidden; margin:8px 0 2px; }
-  .bar > i { display:block; height:100%; width:0; background:var(--ok); transition:width .4s, background .4s; }
-  .cat { display:flex; gap:14px; align-items:center; }
-  .cat .face { font-size:54px; line-height:1; }
-  .cat .t { font-size:19px; font-weight:700; }
-  button { font:inherit; border:0; border-radius:12px; padding:14px; font-weight:700; background:var(--acc); color:var(--accInk); width:100%; }
-  button.alt { background:var(--soft); color:var(--ink); }
-  button.red { background:var(--bad); color:#fff; }
-  button.green { background:var(--ok); color:#fff; }
-  button.link { background:none; color:var(--mute); font-weight:400; font-size:13px; padding:8px; }
-  button:disabled { opacity:.4; }
-  button:active:not(:disabled) { transform:scale(.98); }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .stepper { display:flex; align-items:center; justify-content:center; gap:18px; margin:6px 0 12px; }
-  .stepper button { width:48px; height:48px; padding:0; font-size:24px; }
-  .stepper b { font-size:34px; min-width:60px; text-align:center; }
-  .alert { border-radius:14px; padding:12px 14px; margin-bottom:10px; font-weight:600; display:flex; gap:10px; align-items:flex-start; }
-  .alert small { display:block; font-weight:400; opacity:.9; }
-  .alert.bad  { background:#fde8e8; color:#9b1c1c; }
-  .alert.warn { background:#fff3d6; color:#7a5200; }
-  .alert.ok   { background:#dcf5e5; color:#14693a; }
-  @media (prefers-color-scheme: dark) {
-    .alert.bad { background:#3d1b1b; color:#ffb4b4; } .alert.warn { background:#3a2e10; color:#ffd98a; } .alert.ok { background:#12301f; color:#9fe3b8; }
-  }
-  input[type=text],input[type=password],input[type=number],input[type=time] {
-    width:100%; padding:12px; margin:4px 0 8px; border-radius:10px; border:1px solid var(--line);
-    background:var(--bg); color:var(--ink); font:inherit; }
-  .sched { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center; padding:10px 0; border-top:1px solid var(--line); }
-  .sched:first-of-type { border-top:0; }
-  .sched input[type=time] { margin:0; width:auto; font-size:20px; font-weight:700; }
-  .sw { position:relative; width:50px; height:30px; }
-  .sw input { opacity:0; width:100%; height:100%; margin:0; position:absolute; z-index:2; }
-  .sw span { position:absolute; inset:0; background:var(--line); border-radius:99px; transition:.2s; }
-  .sw span::after { content:""; position:absolute; width:24px; height:24px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; }
-  .sw input:checked + span { background:var(--ok); }
-  .sw input:checked + span::after { transform:translateX(20px); }
-  .sched button { width:auto; padding:10px 14px; font-size:14px; }
-  .ev { display:flex; gap:10px; padding:10px 0; border-top:1px solid var(--line); }
-  .ev:first-of-type { border-top:0; }
-  .ev .ic { font-size:20px; }
-  .ev .tx { flex:1; } .ev .tx small { color:var(--mute); display:block; }
-  nav { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line);
-        display:flex; padding-bottom:env(safe-area-inset-bottom); z-index:10; }
-  nav button { background:none; color:var(--mute); border-radius:0; padding:9px 0 8px; font-size:11px; font-weight:600; position:relative; }
-  nav button span { display:block; font-size:21px; line-height:1.2; }
-  nav button.act { color:var(--acc); }
-  nav .badge { position:absolute; top:3px; left:calc(50% + 6px); background:var(--bad); color:#fff; border-radius:99px;
-               font-size:10px; padding:1px 6px; display:none; }
-  #toast { position:fixed; left:12px; right:12px; top:12px; max-width:496px; margin:0 auto; z-index:20; border-radius:14px; padding:12px 14px;
-           background:#222; color:#fff; font-weight:600; transform:translateY(-140%); transition:transform .3s; }
-  #toast.show { transform:none; }
-  #toast.ok { background:#14693a; } #toast.warn { background:#7a5200; } #toast.bad { background:#9b1c1c; }
-  [hidden] { display:none !important; }
+:root{--bg:#fff6e8;--card:#fff;--ink:#3a2a1a;--mute:#8a7560;--org:#ff9628;--orgd:#c86414;--ok:#22a55a;--warn:#f5b324;--bad:#e5484d;--line:#f0e0c8;--soft:#fff9ef;--head:#2b1d10}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#17110a;--card:#231a10;--ink:#f5ebdd;--mute:#b3a08a;--line:#3a2c1d;--soft:#2b2015;--head:#0f0a05}
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--head);color:#fff}
+header h1{font-size:1.15rem;margin:0}
+.badges{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.badge{font-size:.75rem;padding:4px 10px;border-radius:99px;background:#4a3826;display:flex;align-items:center;gap:6px;color:#fff}
+.dot{width:9px;height:9px;border-radius:50%;background:#888}
+.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.wait{background:var(--warn)}
+button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:9px 14px;background:var(--org);color:#fff;font-weight:600}
+button:hover{background:var(--orgd)}
+button.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.wrap{max-width:1100px;margin:0 auto;padding:18px;display:grid;gap:16px;grid-template-columns:1fr 1fr}
+@media(max-width:820px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
+.card h2{font-size:1rem;margin:0 0 12px}
+.full{grid-column:1/-1}
+.hide{display:none!important}
+label{font-size:.8rem;color:var(--mute);display:block;margin-bottom:4px}
+input,select{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:10px;width:100%;background:var(--soft);color:var(--ink)}
+.row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+.row>div{flex:1;min-width:120px}
+.hint{font-size:.78rem;color:var(--mute);margin:10px 0 0}
+/* peringatan */
+#alerts{grid-column:1/-1;display:grid;gap:8px}
+#alerts:empty{display:none}
+.alert{border-radius:12px;padding:10px 14px;font-weight:600;font-size:.9rem}
+.alert.bad{background:#fde8e8;color:#9b1c1c}.alert.warn{background:#fff3d6;color:#7a5200}
+@media (prefers-color-scheme:dark){.alert.bad{background:#3d1b1b;color:#ffb4b4}.alert.warn{background:#3a2e10;color:#ffd98a}}
+/* kucing */
+.catbox{text-align:center}
+#cat{width:240px;max-width:80%;height:auto}
+.name{font-size:1.5rem;font-weight:700;margin:4px 0 0}
+.stat{color:var(--mute);margin-top:2px}
+.offline #cat{filter:grayscale(1);opacity:.55}
+#cat .eyes-happy,#cat .eyes-sad,#cat .m-open,#cat .m-sad,#cat .kib,#cat .exc{display:none}
+#cat[data-mood=makan] .eyes-normal,#cat[data-mood=lapar] .eyes-normal{display:none}
+#cat[data-mood=makan] .eyes-happy{display:inline}
+#cat[data-mood=lapar] .eyes-sad{display:inline}
+#cat[data-mood=makan] .m-smile,#cat[data-mood=lapar] .m-smile{display:none}
+#cat[data-mood=makan] .m-open{display:inline}
+#cat[data-mood=lapar] .m-sad,#cat[data-mood=lapar] .exc{display:inline}
+#cat[data-mood=makan] .kib{display:inline}
+.tail{transform-box:view-box;transform-origin:150px 170px;animation:wag 2.2s ease-in-out infinite}
+#cat[data-mood=makan] .tail{animation-duration:.5s}
+#cat[data-mood=lapar] .tail{animation:none}
+@keyframes wag{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(10deg)}}
+.eyes-normal{transform-box:fill-box;transform-origin:center;animation:blink 4s infinite}
+@keyframes blink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
+.m-open{transform-box:fill-box;transform-origin:center;animation:chew .35s infinite alternate}
+@keyframes chew{from{transform:scaleY(.4)}to{transform:scaleY(1)}}
+.kib circle{animation:fall 1s linear infinite}
+.kib circle:nth-child(2){animation-delay:.33s}.kib circle:nth-child(3){animation-delay:.66s}
+@keyframes fall{from{transform:translateY(-10px);opacity:1}to{transform:translateY(80px);opacity:0}}
+.exc{animation:flash .8s steps(2) infinite}
+@keyframes flash{50%{opacity:0}}
+/* info */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kv{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px}
+.kv small{color:var(--mute);display:block;font-size:.72rem}
+.kv b{font-size:1.1rem}
+.bar{height:16px;border-radius:99px;background:var(--line);overflow:hidden;margin:8px 0 4px}
+.bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .5s,background .5s}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.chip{padding:5px 10px;border-radius:99px;background:#e9f7ef;color:#16743d;font-weight:600;font-size:.85rem}
+.chip.off{background:var(--line);color:var(--mute)}
+/* servo */
+.servo{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.led{width:44px;height:44px;border-radius:50%;background:var(--bad);box-shadow:0 0 14px var(--bad);transition:.3s}
+.led.open{background:var(--ok);box-shadow:0 0 14px var(--ok)}
+.servo b{font-size:1.2rem}
+.sbtn{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sbtn button{padding:16px;font-size:1rem;background:var(--card);color:var(--ink);border:2px solid var(--line)}
+.sbtn button.on.open{background:var(--ok);color:#fff;border-color:var(--ok)}
+.sbtn button.on.close{background:var(--bad);color:#fff;border-color:var(--bad)}
+/* menu */
+.menu{display:grid;grid-template-columns:190px 1fr;gap:14px}
+@media(max-width:600px){.menu{grid-template-columns:1fr}}
+.mlist{display:flex;flex-direction:column;gap:6px}
+.mlist button{background:var(--card);color:var(--ink);border:1px solid var(--line);text-align:left}
+.mlist button.sel{background:#7fdcf0;border-color:#7fdcf0;color:#102a33}
+.panel{display:none}.panel.sel{display:block}
+.panel h3{margin:0 0 10px;font-size:.95rem}
+.sw{display:flex;align-items:center;gap:8px;margin:10px 0}.sw input{width:auto}
+/* log */
+#log{list-style:none;margin:0;padding:0;font-size:.85rem}
+#log li{padding:6px 0;border-bottom:1px dashed var(--line);display:flex;gap:10px}
+#log time{color:var(--mute);min-width:62px}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--head);color:#fff;padding:10px 16px;border-radius:10px;opacity:0;pointer-events:none;transition:.25s;font-size:.9rem;z-index:20;max-width:92vw}
+#toast.show{opacity:1}
 </style>
 </head>
 <body>
-<div id="toast"></div>
-<main>
-  <header><h1>🐱 Smart Cat Feeder</h1><span id="conn" class="pill">terputus</span></header>
+<header>
+  <h1>🐱 Smart Cat Feeder</h1>
+  <div class="badges">
+    <span class="badge"><i class="dot" id="dBroker"></i><span id="tBroker">Broker: putus</span></span>
+    <span class="badge"><i class="dot" id="dDev"></i><span id="tDev">Alat: -</span></span>
+    <button class="ghost hide" id="btnLogout" onclick="logout()">Keluar</button>
+  </div>
+</header>
 
-  <!-- LOGIN -->
-  <section id="login" class="card" hidden>
+<div class="wrap" id="app">
+  <!-- login: host sudah tetap, cukup user & password -->
+  <section class="card full" id="loginCard">
     <h2>Masuk ke broker MQTT</h2>
-    <p class="sub">Username &amp; password dari EMQX Console (Access Control → Authentication). Disimpan hanya di browser ini.</p>
-    <input id="user" type="text" placeholder="Username" autocapitalize="off" autocomplete="username">
-    <input id="pass" type="password" placeholder="Password" autocomplete="current-password">
-    <button id="loginBtn">Sambungkan</button>
+    <div class="row">
+      <div><label>Username</label><input id="user" autocomplete="username" autocapitalize="off"></div>
+      <div><label>Password</label><input id="pass" type="password" autocomplete="current-password"></div>
+      <div style="flex:0"><button id="btnConnect" onclick="connect()">Hubungkan</button></div>
+    </div>
+    <p class="hint">Username &amp; password dari EMQX (Access Control → Authentication). Disimpan hanya di browser ini, jadi cukup login sekali.</p>
+    <p class="hint" id="connMsg" style="font-weight:600"></p>
   </section>
 
-  <div id="app" hidden>
-    <div id="alerts"></div>
+  <div id="alerts"></div>
 
-    <!-- BERANDA -->
-    <section id="tab-home">
-      <div class="card">
-        <div class="cat"><div class="face" id="face">😺</div>
-          <div><div class="t" id="catTitle">Menunggu data…</div><div class="sub" id="catSub">-</div></div></div>
-      </div>
-      <div class="card">
-        <div class="time" id="time">--:--:--</div>
-        <div class="sub" id="date">--/--/----</div>
-      </div>
-      <div class="card">
-        <div class="row"><span>🍽️ Terakhir makan</span><b id="lastFed">-</b></div>
-        <div class="row"><span>Katup servo</span><b id="servo">-</b></div>
-        <div class="row"><span>Jarak kucing</span><b id="dist">-</b></div>
-        <div class="row"><span>Nama kucing</span><b id="nama">-</b></div>
-      </div>
-      <div class="card">
-        <div style="display:flex;justify-content:space-between"><span>Level pakan</span><b id="foodTxt">-</b></div>
-        <div class="bar"><i id="foodBar"></i></div>
-      </div>
-      <button id="quickFeed" class="green" disabled>🍽️ Beri makan sekarang</button>
-    </section>
+  <!-- kucing -->
+  <section class="card">
+    <div class="catbox">
+      <svg id="cat" viewBox="0 0 220 220" data-mood="santai" role="img" aria-label="Kucing">
+        <g class="tail"><path d="M150 170 C195 175 205 140 190 110" fill="none" stroke="#ff9628" stroke-width="14" stroke-linecap="round"/></g>
+        <rect x="62" y="110" width="96" height="80" rx="34" fill="#ff9628"/>
+        <ellipse cx="110" cy="160" rx="22" ry="26" fill="#fff3e0"/>
+        <ellipse cx="86" cy="190" rx="15" ry="10" fill="#fff3e0"/>
+        <ellipse cx="134" cy="190" rx="15" ry="10" fill="#fff3e0"/>
+        <path d="M86 194v6M134 194v6" stroke="#c86414" stroke-width="2"/>
+        <polygon points="62,62 66,14 104,44" fill="#ff9628"/>
+        <polygon points="158,62 154,14 116,44" fill="#ff9628"/>
+        <polygon points="69,50 71,28 89,43" fill="#ff96aa"/>
+        <polygon points="151,50 149,28 131,43" fill="#ff96aa"/>
+        <circle cx="110" cy="82" r="50" fill="#ff9628"/>
+        <rect x="107.5" y="36" width="5" height="16" rx="2" fill="#c86414"/>
+        <rect x="92" y="39" width="4" height="12" rx="2" fill="#c86414"/>
+        <rect x="124" y="39" width="4" height="12" rx="2" fill="#c86414"/>
+        <g class="eyes-normal">
+          <circle cx="90" cy="78" r="11" fill="#fff"/><circle cx="92" cy="80" r="6" fill="#111"/>
+          <circle cx="130" cy="78" r="11" fill="#fff"/><circle cx="132" cy="80" r="6" fill="#111"/>
+        </g>
+        <g class="eyes-happy" fill="none" stroke="#111" stroke-width="4" stroke-linecap="round">
+          <path d="M80 82 Q90 70 100 82"/><path d="M120 82 Q130 70 140 82"/>
+        </g>
+        <g class="eyes-sad">
+          <circle cx="90" cy="80" r="13" fill="#fff"/><circle cx="90" cy="84" r="8" fill="#111"/><circle cx="87" cy="80" r="2.5" fill="#fff"/>
+          <circle cx="130" cy="80" r="13" fill="#fff"/><circle cx="130" cy="84" r="8" fill="#111"/><circle cx="127" cy="80" r="2.5" fill="#fff"/>
+          <path d="M74 62 L98 69 M146 62 L122 69" stroke="#c86414" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="76" cy="104" r="4" fill="#50a0ff"/>
+        </g>
+        <polygon points="103,93 117,93 110,101" fill="#ff96aa"/>
+        <g class="m-smile" fill="none" stroke="#111" stroke-width="2.5" stroke-linecap="round">
+          <path d="M110 101v5"/><path d="M110 106q-7 9 -15 2"/><path d="M110 106q7 9 15 2"/>
+        </g>
+        <g class="m-open"><ellipse cx="110" cy="113" rx="9" ry="9" fill="#111"/><ellipse cx="110" cy="118" rx="5" ry="3.5" fill="#ff96aa"/></g>
+        <path class="m-sad" d="M97 116 Q110 104 123 116" fill="none" stroke="#111" stroke-width="2.5" stroke-linecap="round"/>
+        <g stroke="#fff" stroke-width="2" stroke-linecap="round">
+          <path d="M68 98 L34 90M68 104 L34 108M152 98 L186 90M152 104 L186 108"/>
+        </g>
+        <!-- kalung + lonceng -->
+        <path d="M80 124 Q110 140 140 124" fill="none" stroke="#e5484d" stroke-width="6" stroke-linecap="round"/>
+        <circle cx="110" cy="136" r="6" fill="#f5b324" stroke="#c86414" stroke-width="1.5"/>
+        <g class="kib" fill="#96592a"><circle cx="98" cy="40" r="4"/><circle cx="110" cy="40" r="4"/><circle cx="122" cy="40" r="4"/></g>
+        <text class="exc" x="178" y="44" font-size="40" font-weight="700" fill="#e5484d">!</text>
+      </svg>
+      <p class="name" id="catName">-</p>
+      <p class="stat" id="catStat">Menunggu data alat…</p>
+    </div>
+  </section>
 
-    <!-- KONTROL -->
-    <section id="tab-ctl" hidden>
-      <div class="card">
-        <h2>Beri makan dari jarak jauh</h2>
-        <p class="sub">Servo membuka sesuai jumlah porsi (1 porsi = 1 detik), lalu menutup sendiri.</p>
-        <div class="stepper"><button id="pMinus" class="alt">−</button><b><span id="pVal">3</span><small class="sub"> porsi</small></b><button id="pPlus" class="alt">+</button></div>
-        <button id="feedBtn" class="green" disabled>🍽️ Beri makan sekarang</button>
-        <button id="savePorsi" class="link" disabled>Jadikan porsi bawaan jadwal</button>
-      </div>
-      <div class="card">
-        <h2>Gerakkan servo manual</h2>
-        <p class="sub">Buka katup selama Anda mau. Demi keamanan, katup menutup sendiri jika pakan habis atau setelah 60 detik.</p>
-        <div class="row"><span>Status katup</span><b id="servo2">-</b></div>
-        <div class="grid2" style="margin-top:10px">
-          <button id="openBtn" class="green" disabled>🔓 Buka</button>
-          <button id="closeBtn" class="red" disabled>🔒 Tutup</button>
-        </div>
-        <div class="sub" id="remoteLeft" style="margin-top:8px" hidden></div>
-      </div>
-      <div class="card">
-        <h2>Nama kucing</h2>
-        <input id="namaIn" type="text" maxlength="8" placeholder="Maks 8 huruf/angka" autocapitalize="characters">
-        <button id="namaBtn" class="alt" disabled>Simpan nama</button>
-      </div>
-      <div class="card">
-        <h2>Tambah pakan</h2>
-        <input id="gramIn" type="number" min="1" max="100" inputmode="numeric" placeholder="Gram (maks 100)">
-        <button id="gramBtn" class="alt" disabled>Tambah pakan</button>
-      </div>
-      <div class="card">
-        <h2>Alat</h2>
-        <button id="syncBtn" class="alt" disabled>🕒 Samakan jam</button>
-        <p class="sub" style="margin-bottom:0">"Samakan jam" mengatur jam RTC alat sesuai jam HP ini.</p>
-      </div>
-    </section>
+  <!-- status -->
+  <section class="card">
+    <h2>Status</h2>
+    <div class="grid2">
+      <div class="kv"><small>Jam alat</small><b id="vJam">--:--:--</b></div>
+      <div class="kv"><small>Jarak kucing</small><b id="vJarak">- cm</b></div>
+      <div class="kv"><small>Porsi</small><b id="vPorsi">-</b></div>
+      <div class="kv"><small>Terakhir makan</small><b id="vFed" style="font-size:.95rem">-</b></div>
+    </div>
+    <div style="margin-top:14px"><b id="vPakan">Pakan: - / 100 g</b>
+      <div class="bar"><i id="bar"></i></div></div>
+    <div class="chips" id="chips"></div>
+    <p class="hint">Update terakhir dari alat: <span id="vUpd">-</span></p>
+  </section>
 
-    <!-- JADWAL -->
-    <section id="tab-sched" hidden>
-      <div class="card">
-        <h2>Jadwal makan otomatis</h2>
-        <div id="schedList"></div>
-        <p class="sub" style="margin-bottom:0">Ubah jam / aktif-nonaktif, lalu tekan Simpan pada barisnya. Porsi per jadwal: <b id="porsiS">-</b> (atur di menu Kontrol).</p>
-      </div>
-    </section>
+  <!-- servo -->
+  <section class="card">
+    <h2>Kontrol Servo</h2>
+    <div class="servo"><div class="led" id="led"></div><div><small style="color:var(--mute)">Katup saat ini</small><br><b id="servoTxt">-</b></div></div>
+    <div class="sbtn">
+      <button id="bOpen" class="open" onclick="servo('BUKA')">🟢 BUKA</button>
+      <button id="bClose" class="close" onclick="servo('TUTUP')">🔴 TUTUP</button>
+    </div>
+    <p class="hint">Perintah dikirim ke alat lewat MQTT, tampilan berubah setelah alat membalas. Servo yang dibuka manual menutup sendiri maksimal 60 detik atau saat pakan habis.</p>
+  </section>
 
-    <!-- NOTIFIKASI -->
-    <section id="tab-notif" hidden>
-      <div class="card">
-        <h2>Pengaturan peringatan</h2>
-        <label class="sub">Peringatan "kucing belum makan" jika tidak ada makan selama (menit)</label>
-        <input id="hungryMin" type="number" min="1" max="1440" step="1" inputmode="numeric">
-        <div class="row"><span>Bunyi &amp; getar</span><label class="sw"><input id="optSound" type="checkbox"><span></span></label></div>
-        <div class="row"><span>Notifikasi browser</span><button id="optNotif" class="alt" style="width:auto;padding:8px 14px;font-size:14px">Aktifkan</button></div>
-        <button id="testNotif" class="alt" style="margin-top:10px">Tes notifikasi</button>
-        <p class="sub" style="margin-bottom:0">Notifikasi hanya muncul selama halaman ini terbuka (boleh di latar belakang). Tidak ada server push.</p>
-      </div>
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Riwayat</h2><button id="clearEv" class="link" style="width:auto">Hapus</button></div>
-        <div id="evList"><p class="sub">Belum ada kejadian.</p></div>
-      </div>
-      <button id="logout" class="link">Keluar / ganti akun</button>
-    </section>
-  </div>
-</main>
+  <!-- menu -->
+  <section class="card">
+    <h2>Menu</h2>
+    <div class="menu">
+      <div class="mlist" id="mlist"></div>
+      <div id="panels"></div>
+    </div>
+  </section>
 
-<nav id="nav" hidden>
-  <button data-tab="home" class="act"><span>🏠</span>Beranda</button>
-  <button data-tab="ctl"><span>🎛️</span>Kontrol</button>
-  <button data-tab="sched"><span>📅</span>Jadwal</button>
-  <button data-tab="notif"><span>🔔</span>Notifikasi<i class="badge" id="badge">0</i></button>
-</nav>
+  <section class="card full">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="margin:0">Riwayat kejadian</h2>
+      <button class="ghost" onclick="clearLog()" style="padding:5px 10px;font-size:.8rem">Hapus</button>
+    </div>
+    <ul id="log"><li style="color:var(--mute)">Belum ada kejadian.</li></ul>
+  </section>
+</div>
+<div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script>
-const HOST = "wss://ge188d00.ala.asia-southeast1.emqxsl.com:8084/mqtt";
-const BASE="smartcat/feeder01/";
-const T_STATUS=BASE+"status", T_ONLINE=BASE+"online", T_EVENT=BASE+"event";
+/* ===== Host broker tetap (EMQX milik kita). Tidak ada kolom host di halaman. ===== */
+const HOST = 'ge188d00.ala.asia-southeast1.emqxsl.com';
+const BASE = 'smartcat/feeder01/';
+const MAX_GRAM = 100;
+const STALE_MS = 90000;               // tidak ada status 90 dtk = alat dianggap offline
 const $ = id => document.getElementById(id);
-const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let client = null, st = null, devOnline = false, lastRx = 0;
+let pendingServo = null, pendTimer = null, lastFed = 0;
+const dirty = new Set();
 
 const store = {
-  get(k,d=""){ try { const v = localStorage.getItem(k); return v===null ? d : v; } catch(e){ return d; } },
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
   set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
   del(k){ try { localStorage.removeItem(k); } catch(e){} }
 };
 
-let client=null, deviceOnline=false, wasOnline=false, S=null, rx=0;
-let porsiSel=3, hungryNotified=false, lastSeenFeed=null, unread=0, curTab="home", lowFoodShown=0;
-let settings = { hungryMin:+store.get("hungryMin","360"), sound:store.get("sound","1")==="1" };
-let events = []; try { events = JSON.parse(store.get("events","[]")); } catch(e){ events=[]; }
-
-/* ---------- util ---------- */
-function fmtDur(sec){
-  sec = Math.max(0, Math.floor(sec));
-  if (sec < 60) return sec + " dtk";
-  if (sec < 3600) return Math.floor(sec/60) + " mnt";
-  const h = Math.floor(sec/3600), m = Math.floor(sec%3600/60);
-  return h + " jam" + (m ? " " + m + " mnt" : "");
+/* ---------- UI helpers ---------- */
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2800);}
+function showMsg(m,bad){const e=$('connMsg');e.textContent=m;e.style.color=bad?'var(--bad)':'var(--mute)';}
+function setBroker(s){
+  $('dBroker').className='dot '+(s==='ok'?'ok':s==='wait'?'wait':'bad');
+  $('tBroker').textContent='Broker: '+(s==='ok'?'terhubung':s==='wait'?'menghubungkan…':'putus');
+  $('btnLogout').classList.toggle('hide', s==='off' && !store.get('scf2'));
 }
-function nowDev(){ return Date.now()/1000; }   // pakai jam HP
-function hhmm(ts){ const d=new Date(ts*1000); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
-
-let audioCtx=null;
-function beep(freq=880, ms=180, n=1){
-  if (!settings.sound) return;
-  try {
-    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
-    for (let i=0;i<n;i++){
-      const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-      o.frequency.value=freq; o.connect(g); g.connect(audioCtx.destination);
-      const t=audioCtx.currentTime + i*(ms+90)/1000; g.gain.setValueAtTime(.15,t);
-      o.start(t); o.stop(t+ms/1000);
-    }
-  } catch(e){}
-  try { navigator.vibrate && navigator.vibrate(n>1 ? [200,100,200] : 200); } catch(e){}
-}
-
-let toastT=null;
-function toast(t, kind=""){
-  const e=$("toast"); e.textContent=t; e.className="show "+kind;
-  clearTimeout(toastT); toastT=setTimeout(()=>e.className="", 3500);
-}
-
-/* ---------- notifikasi + riwayat ---------- */
-function notify(kind, icon, title, body=""){
-  const ev = { t:Date.now(), kind, icon, title, body };
-  events.unshift(ev); events = events.slice(0,60);
-  store.set("events", JSON.stringify(events));
-  if (curTab !== "notif") { unread++; updBadge(); }
-  renderEvents();
-  toast(icon+" "+title, kind);
-  beep(kind==="bad" ? 440 : 880, 180, kind==="bad" ? 2 : 1);
-  try {
-    if ("Notification" in window && Notification.permission==="granted" && document.hidden)
-      new Notification(title, { body, tag:"smartcat-"+kind });
-  } catch(e){}
-}
-function updBadge(){ const b=$("badge"); b.textContent=unread; b.style.display=unread? "block":"none"; }
-function renderEvents(){
-  const el=$("evList");
-  if (!events.length) { el.innerHTML='<p class="sub">Belum ada kejadian.</p>'; return; }
-  el.innerHTML = events.map(e=>{
-    const d=new Date(e.t);
-    const ts=d.toLocaleDateString("id-ID",{day:"2-digit",month:"short"})+" "+d.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"});
-    return `<div class="ev"><div class="ic">${esc(e.icon)}</div><div class="tx"><b>${esc(e.title)}</b>${e.body?`<small>${esc(e.body)}</small>`:""}<small>${ts}</small></div></div>`;
-  }).join("");
-}
-
-const SRC = { kucing:"oleh kucing", Jadwal:"jadwal otomatis", Manual:"tombol di alat", HP:"dari HP", Tes:"tes", sensor:"sensor" };
-function handleEvent(e){
-  switch(e.event){
-    case "kucing_makan":  notify("ok","😺","Kucing mulai makan","Katup terbuka"); break;
-    case "selesai_makan": notify("ok","✅","Kucing selesai makan", e.detail); break;
-    case "feed_mulai":    notify("ok","🍽️","Pemberian makan dimulai", e.detail); break;
-    case "feed_selesai":  notify("ok","✅","Pakan sudah diberikan", e.detail); break;
-    case "tambah_pakan":  notify("ok","🥣","Pakan ditambah", e.detail); break;
-    case "ditolak":       notify("warn","⚠️","Pemberian pakan ditolak", e.detail); break;
-  }
-  if (S && (e.event==="kucing_makan" || e.event==="feed_mulai")) S.last = Date.now()/1000;
-}
-
-/* ---------- tampilan ---------- */
-function setConn(){
-  const on = client && client.connected;
-  const e=$("conn");
-  if (!on) { e.textContent="terputus"; e.className="pill"; }
-  else if (!deviceOnline) { e.textContent="alat offline"; e.className="pill"; }
-  else { e.textContent="online"; e.className="pill on"; }
-  const ok = on && deviceOnline;
-  ["quickFeed","feedBtn","openBtn","closeBtn","namaBtn","gramBtn","syncBtn","savePorsi"].forEach(id=>$(id).disabled=!ok);
-  if (wasOnline && !deviceOnline && on) notify("bad","📡","Alat offline","ESP32 tidak terhubung ke broker");
-  if (!wasOnline && deviceOnline && S) notify("ok","📡","Alat kembali online");
-  wasOnline = deviceOnline;
+function setDevice(on){
+  const was=devOnline; devOnline=on;
+  $('dDev').className='dot '+(on?'ok':'bad');
+  $('tDev').textContent='Alat: '+(on?'online':'offline');
+  $('app').classList.toggle('offline',!on);
+  if(was!==on && st) toast(on?'Alat online':'Alat offline');
   renderAlerts();
 }
+function showLogin(show){ $('loginCard').classList.toggle('hide',!show); }
 
-function hungrySec(){
-  if (!S) return 0;
-  return nowDev() - Math.max(S.last, S.boot);
-}
-
-function renderAlerts(){
-  const a=[];
-  if (client && client.connected && !deviceOnline) a.push(["bad","📡","Alat offline","ESP32 belum terhubung. Data di bawah mungkin sudah lama."]);
-  if (S && deviceOnline) {
-    if (S.food <= 5) a.push(["bad","🚨","Pakan habis!","Isi wadah pakan, pemberian makan ditolak."]);
-    else if (S.food < 20) a.push(["warn","🥣","Pakan menipis ("+S.food+"%)","Segera isi wadah pakan."]);
-    if (hungrySec() > settings.hungryMin*60) a.push(["bad","😿","Kucing belum makan","Sudah "+fmtDur(hungrySec())+" tanpa makan. Beri makan sekarang?"]);
-    if (S.remote) a.push(["warn","🔓","Katup dibuka manual","Menutup otomatis dalam "+S.rleft+" dtk."]);
-  }
-  $("alerts").innerHTML = a.map(x=>`<div class="alert ${x[0]}"><span>${x[1]}</span><span>${esc(x[2])}<small>${esc(x[3])}</small></span></div>`).join("");
-}
-
-function renderStatus(){
-  if (!S) return;
-  const d=S, hs=hungrySec(), hungry = hs > settings.hungryMin*60 || d.food <= 5;
-  $("time").textContent=d.time; $("date").textContent=d.date;
-  $("servo").textContent=d.servo; $("servo2").textContent=d.servo + (d.remote ? " (manual)" : "");
-  $("dist").textContent = d.dist>=400 ? "—" : d.dist+" cm";
-  $("nama").textContent = d.nama;
-  const ref = Math.max(d.last, d.boot);
-  $("lastFed").textContent = d.last ? fmtDur(nowDev()-d.last)+" lalu" : "belum sejak alat nyala";
-  $("foodTxt").textContent = d.food+"% ("+Math.round(d.gram)+" g)"+(d.food<=5?" — HABIS":d.food<20?" — menipis":"");
-  const b=$("foodBar"); b.style.width=d.food+"%"; b.style.background=d.food>=50?"var(--ok)":d.food>=20?"var(--warn)":"var(--bad)";
-  $("porsiS").textContent=d.porsi;
-  const eatingNow = d.eating || d.servo==="BUKA";
-  $("face").textContent = eatingNow ? "😸" : hungry ? "😿" : "😺";
-  $("catTitle").textContent = d.eating ? "Kucing sedang makan" : d.servo==="BUKA" ? "Katup terbuka" : hungry ? "Kucing mungkin lapar" : "Kucing kenyang & santai";
-  $("catSub").textContent = d.last ? "Terakhir makan "+hhmm(d.last) : "Belum ada catatan makan";
-  const rl=$("remoteLeft");
-  rl.hidden = !d.remote; rl.textContent = d.remote ? "Menutup otomatis dalam "+d.rleft+" dtk" : "";
-  renderSched(false);
-  renderAlerts();
-}
-
-let schedDirty=[false,false,false];
-function renderSched(force){
-  const box=$("schedList");
-  if (!box.children.length) {
-    box.innerHTML=[0,1,2].map(i=>`<div class="sched" data-i="${i}">
-      <label class="sw"><input type="checkbox" data-on="${i}"><span></span></label>
-      <input type="time" data-t="${i}">
-      <button data-save="${i}" class="alt" disabled>Simpan</button></div>`).join("");
-    box.querySelectorAll("input").forEach(inp=>inp.addEventListener("input",()=>{
-      const i=+(inp.dataset.on ?? inp.dataset.t); schedDirty[i]=true; box.querySelector(`[data-save="${i}"]`).disabled=false;
-    }));
-    box.querySelectorAll("[data-save]").forEach(btn=>btn.onclick=()=>{
-      const i=+btn.dataset.save, t=box.querySelector(`[data-t="${i}"]`).value, on=box.querySelector(`[data-on="${i}"]`).checked;
-      if (!t) return toast("Isi jamnya dulu","warn");
-      const [h,m]=t.split(":").map(Number);
-      send("jadwal/"+(i+1), on ? t : "OFF", "Jadwal "+(i+1)+" disimpan");
-      schedDirty[i]=false; btn.disabled=true;
-    });
-  }
-  if (!S) return;
-  S.sched.forEach((s,i)=>{
-    if (schedDirty[i] && !force) return;
-    box.querySelector(`[data-t="${i}"]`).value = String(s.h).padStart(2,"0")+":"+String(s.m).padStart(2,"0");
-    box.querySelector(`[data-on="${i}"]`).checked = !!s.on;
+/* ---------- load library MQTT (dengan cadangan) ---------- */
+function loadMqtt(){
+  const urls=['https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js','https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js'];
+  return new Promise((resolve,reject)=>{
+    let i=0;
+    (function next(){
+      if(window.mqtt) return resolve();
+      if(i>=urls.length) return reject(new Error('library gagal dimuat'));
+      const s=document.createElement('script');
+      s.src=urls[i++];
+      s.onload=()=>window.mqtt?resolve():next();
+      s.onerror=next;
+      document.head.appendChild(s);
+    })();
   });
-}
-
-function handleStatus(d){
-  const prev = S, now = Date.now()/1000;
-  S = {
-    nama:d.nama, gram:d.pakan, food:d.persen, servo:d.servo, eating:!!d.makan,
-    dist:d.jarak, porsi:d.porsi, time:d.jam, date:new Date().toLocaleDateString("id-ID"),
-    sched:(d.jadwal||[]).map((x,i)=>{
-      const m=/^(\d\d):(\d\d)$/.exec(x);
-      if (m) return {h:+m[1], m:+m[2], on:1};
-      const o=prev && prev.sched[i];
-      return {h:o?o.h:7, m:o?o.m:0, on:0};
-    }),
-    last: prev ? prev.last : 0, boot: prev ? prev.boot : now,
-    remote:false, rleft:0
-  };
-  rx = Date.now();
-  if (!prev) { porsiSel = d.porsi; $("pVal").textContent = porsiSel; $("namaIn").value = d.nama; }
-  else if (S.eating && !prev.eating) { S.last = now; hungryNotified=false; }
-  renderStatus();
 }
 
 /* ---------- MQTT ---------- */
-function send(name, val, okMsg){
-  if (!client || !client.connected || !deviceOnline) return toast("Alat sedang offline","bad");
-  client.publish(BASE+"cmd/"+name, String(val), {qos:1});
-  if (okMsg) toast(okMsg, "ok");
-}
-
-function connect(user, pass){
-  if (client) client.end(true);
-  client = mqtt.connect(HOST, { username:user, password:pass, reconnectPeriod:3000, connectTimeout:8000,
-                                clientId:"web-"+Math.random().toString(16).slice(2,10) });
-  client.on("connect", ()=>{
-    store.set("u",user); store.set("p",pass);
-    $("login").hidden=true; $("app").hidden=false; $("nav").hidden=false;
-    client.subscribe([T_STATUS,T_ONLINE,T_EVENT]);
-    setConn();
+async function connect(){
+  const user=$('user').value.trim(), pass=$('pass').value;
+  if(!user||!pass){toast('Isi username dan password dulu');return;}
+  if(client){client.end(true);client=null;}
+  setBroker('wait');
+  showMsg('Memuat library MQTT…');
+  try{ await loadMqtt(); }
+  catch(e){
+    setBroker('off');
+    showMsg('Library MQTT gagal dimuat (internet/adblock memblokir CDN). Matikan adblock lalu refresh.',true);
+    return;
+  }
+  const url='wss://'+HOST+':8084/mqtt';
+  showMsg('Menghubungkan ke broker…');
+  let tries=0, authFail=false;
+  const c = mqtt.connect(url,{
+    clientId:'web-'+Math.random().toString(16).slice(2,10),
+    username:user,password:pass,protocolVersion:4,clean:true,
+    keepalive:30,reconnectPeriod:4000,connectTimeout:8000
   });
-  client.on("message", (t,m)=>{
-    const s=m.toString();
-    if (t===T_ONLINE) { deviceOnline = s==="online"; setConn(); }
-    else if (t===T_STATUS) { try { handleStatus(JSON.parse(s)); } catch(e){} }
-    else if (t===T_EVENT) { try { handleEvent(JSON.parse(s)); } catch(e){} }
+  client=c;
+  c.on('connect',()=>{
+    setBroker('ok');
+    showMsg('Terhubung ✔');
+    store.set('scf2',JSON.stringify({user,pass}));   // simpan setelah berhasil login
+    c.subscribe([BASE+'status',BASE+'online',BASE+'event'],{qos:1});
+    setTimeout(()=>showLogin(false),800);
+    toast('Terhubung ke broker');
   });
-  client.on("close", ()=>{ setConn(); });
-  client.on("error", e=>{
-    if (/not authorized|bad user/i.test(e.message)) {
-      store.del("p"); $("login").hidden=false; $("app").hidden=true; $("nav").hidden=true;
-      toast("Username/password salah","bad"); client.end(true);
-    }
+  c.on('reconnect',()=>setBroker('wait'));
+  c.on('close',()=>{
+    setBroker('off');
+    setDevice(false);
+    if(authFail) return;
+    tries++;
+    if(tries>=2) showMsg('Gagal membuka WebSocket (percobaan '+tries+'). Cek koneksi internet / jaringan yang memblokir port 8084.',true);
+  });
+  c.on('error',e=>{
+    console.error('MQTT error:',e);
+    const m=String((e&&e.message)||e);
+    if(/not authorized|bad user|auth|password|identifier/i.test(m)){
+      authFail=true; c.end(true); setBroker('off');
+      store.del('scf2');
+      showLogin(true);
+      showMsg('Login ditolak EMQX ('+m+'). Cek user & password di Access Control → Authentication.',true);
+    } else showMsg('Error: '+m,true);
+  });
+  c.on('message',onMsg);
+}
+function logout(){
+  store.del('scf2');
+  if(client){client.end(true);client=null;}
+  st=null; $('pass').value='';
+  setBroker('off'); setDevice(false); showLogin(true); showMsg('');
+}
+function onMsg(topic,payload){
+  const t=topic.slice(BASE.length), s=payload.toString();
+  if(t==='online') setDevice(s==='online');
+  else if(t==='status'){ try{ st=JSON.parse(s); lastRx=Date.now(); if(!devOnline) setDevice(true); render(); }catch(e){} }
+  else if(t==='event'){ try{ onEvent(JSON.parse(s)); }catch(e){} }
+}
+function pub(sub,val){
+  if(!client||!client.connected){toast('Belum terhubung ke broker');return false;}
+  if(!devOnline){toast('Alat sedang offline (Wokwi/ESP32 belum jalan?)');return false;}
+  client.publish(BASE+'cmd/'+sub,String(val),{qos:1});
+  return true;
+}
+
+/* ---------- render ---------- */
+function fmtAgo(ts){
+  const s=Math.max(0,Math.floor((Date.now()-ts)/1000));
+  if(s<60) return s+' dtk lalu';
+  if(s<3600) return Math.floor(s/60)+' mnt lalu';
+  return Math.floor(s/3600)+' jam lalu';
+}
+function render(){
+  if(!st) return;
+  const pct=Math.max(0,Math.min(100,st.persen));
+  const habis=st.pakan<=0.5;
+  const mood=st.makan?'makan':(pct<20?'lapar':'santai');
+  $('cat').dataset.mood=mood;
+  $('catName').textContent=st.nama;
+  $('catStat').textContent=st.makan?'sedang makan~':habis?'pakan habis!':pct<20?'lapar!':'santai';
+  $('vJam').textContent=st.jam;
+  $('vJarak').textContent=(st.jarak>=400?'—':st.jarak)+' cm';
+  $('vPorsi').textContent=st.porsi+' ('+st.porsi*5+' g)';
+  $('vUpd').textContent=new Date().toLocaleTimeString('id-ID');
+  $('vFed').textContent=lastFed?fmtAgo(lastFed):'belum ada catatan';
+  $('vPakan').textContent='Pakan: '+Math.round(st.pakan)+' / '+MAX_GRAM+' g ('+pct+'%)';
+  const bar=$('bar');bar.style.width=pct+'%';
+  bar.style.background=pct>=50?'var(--ok)':pct>=20?'var(--warn)':'var(--bad)';
+  $('chips').innerHTML=st.jadwal.map((j,i)=>'<span class="chip'+(j==='OFF'?' off':'')+'">J'+(i+1)+' '+(j==='OFF'?'OFF':j)+'</span>').join('');
+
+  const open=st.servo==='BUKA';
+  $('led').classList.toggle('open',open);
+  $('servoTxt').textContent=open?'TERBUKA (kucing makan)':'TERTUTUP';
+  $('bOpen').classList.toggle('on',open);
+  $('bClose').classList.toggle('on',!open);
+  if(pendingServo&&st.servo===pendingServo) clearPending();
+  syncForms();
+  renderAlerts();
+}
+function renderAlerts(){
+  const a=[];
+  if(client&&client.connected&&!devOnline) a.push(['bad','📡 Alat offline. Data di bawah mungkin sudah lama.']);
+  if(st&&devOnline){
+    if(st.pakan<=0.5) a.push(['bad','🚨 Pakan habis! Pemberian makan akan ditolak. Tambah pakan lewat menu.']);
+    else if(st.persen<20) a.push(['warn','🥣 Pakan menipis ('+st.persen+'%). Segera isi wadah.']);
+  }
+  const box=$('alerts');
+  box.innerHTML='';
+  a.forEach(x=>{ const d=document.createElement('div'); d.className='alert '+x[0]; d.textContent=x[1]; box.appendChild(d); });
+}
+function clearPending(){pendingServo=null;clearTimeout(pendTimer);$('bOpen').disabled=false;$('bClose').disabled=false;}
+
+/* ---------- servo ---------- */
+function servo(cmd){
+  if(!pub('servo',cmd)) return;
+  pendingServo=cmd;
+  $('bOpen').disabled=true;$('bClose').disabled=true;
+  clearTimeout(pendTimer);
+  pendTimer=setTimeout(()=>{clearPending();toast('Tidak ada balasan dari alat');},8000);
+}
+
+/* ---------- log ---------- */
+const EV={kucing_makan:'Kucing makan (servo buka)',selesai_makan:'Selesai makan',feed_mulai:'Beri makan dimulai',feed_selesai:'Beri makan selesai',ditolak:'Ditolak',tambah_pakan:'Pakan ditambah'};
+function onEvent(e){
+  if(e.event==='ditolak') clearPending();
+  if(e.event==='kucing_makan'||e.event==='feed_mulai'){ lastFed=Date.now(); store.set('lastFed',String(lastFed)); $('vFed').textContent=fmtAgo(lastFed); }
+  const label=(EV[e.event]||e.event)+(e.detail?' · '+e.detail:'')+' · sisa '+Math.round(e.pakan)+' g';
+  const ul=$('log');
+  if(ul.firstElementChild&&ul.firstElementChild.style.color) ul.innerHTML='';
+  const li=document.createElement('li');
+  const tm=document.createElement('time'); tm.textContent=new Date().toLocaleTimeString('id-ID');
+  const sp=document.createElement('span'); sp.textContent=label;
+  li.append(tm,sp); ul.prepend(li);
+  while(ul.children.length>15) ul.lastChild.remove();
+  if(e.event==='ditolak') toast('⚠️ '+label);
+}
+function clearLog(){ $('log').innerHTML='<li style="color:var(--mute)">Belum ada kejadian.</li>'; }
+
+/* ---------- menu ---------- */
+const MENU=[['pakan','1 Tambah Pakan'],['nama','2 Nama Kucing'],['j0','3 Jadwal 1'],['j1','4 Jadwal 2'],['j2','5 Jadwal 3'],['porsi','6 Porsi'],['jam','7 Set Jam'],['tes','8 Beri Makan']];
+function panelHTML(k){
+  if(k==='pakan') return '<h3>Tambah Pakan (gram)</h3><label>Jumlah gram</label><input id="fpakan" type="number" min="1" max="100" value="20" inputmode="numeric"><br><br><button onclick="addPakan()">Tambah</button>';
+  if(k==='nama') return '<h3>Nama Kucing</h3><label>Maks 8 karakter (A-Z, 0-9)</label><input id="fnama" maxlength="8" style="text-transform:uppercase"><br><br><button onclick="saveNama()">Simpan</button>';
+  if(k[0]==='j'){const i=k[1];return '<h3>Jadwal '+(+i+1)+'</h3><label>Jam</label><input id="jt'+i+'" type="time" value="07:00"><div class="sw"><input id="jo'+i+'" type="checkbox" checked><label style="margin:0">Aktif</label></div><button onclick="saveJadwal('+i+')">Simpan</button>';}
+  if(k==='porsi') return '<h3>Porsi</h3><label>1 porsi = 5 gram</label><select id="fporsi">'+[1,2,3,4,5].map(n=>'<option value="'+n+'">'+n+' porsi ('+n*5+' g)</option>').join('')+'</select><br><br><button onclick="savePorsi()">Simpan</button>';
+  if(k==='jam') return '<h3>Set Jam alat</h3><label>Jam (HH:MM)</label><input id="fjam" type="time"><br><br><div class="row"><button onclick="saveJam()">Simpan</button><button class="ghost" onclick="useNow()">Pakai jam HP/laptop</button></div>';
+  if(k==='tes') return '<h3>Beri Makan Sekarang</h3><label>Porsi</label><select id="ftes">'+[1,2,3,4,5].map(n=>'<option value="'+n+'">'+n+' porsi ('+n*5+' g)</option>').join('')+'</select><br><br><button onclick="doFeed()">Beri makan sekarang</button><p class="hint">Servo terbuka otomatis sesuai gram, lalu menutup sendiri.</p>';
+  return '';
+}
+function buildMenu(){
+  $('mlist').innerHTML=MENU.map(m=>'<button data-k="'+m[0]+'">'+m[1]+'</button>').join('');
+  $('panels').innerHTML=MENU.map(m=>'<div class="panel" data-k="'+m[0]+'">'+panelHTML(m[0])+'</div>').join('');
+  document.querySelectorAll('#mlist button').forEach(b=>b.onclick=()=>pick(b.dataset.k));
+  document.querySelectorAll('#panels input,#panels select').forEach(el=>el.addEventListener('input',()=>dirty.add(el.id)));
+  pick('pakan'); useNow(true);
+}
+function pick(k){
+  document.querySelectorAll('#mlist button,#panels .panel').forEach(e=>e.classList.toggle('sel',e.dataset.k===k));
+}
+function useNow(silent){
+  const d=new Date(),v=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  $('fjam').value=v; if(!silent) dirty.add('fjam');
+}
+function syncForms(){
+  if(!st) return;
+  if(!dirty.has('fnama')) $('fnama').value=st.nama;
+  if(!dirty.has('fporsi')) $('fporsi').value=st.porsi;
+  if(!dirty.has('ftes')) $('ftes').value=st.porsi;
+  st.jadwal.forEach((j,i)=>{
+    if(!dirty.has('jt'+i)&&j!=='OFF') $('jt'+i).value=j;
+    if(!dirty.has('jo'+i)) $('jo'+i).checked=(j!=='OFF');
   });
 }
-
-/* ---------- aksi tombol ---------- */
-function feedNow(p){
-  send("feed", p, "Perintah makan ("+p+" porsi) dikirim");
-  ["quickFeed","feedBtn"].forEach(id=>{ $(id).disabled=true; setTimeout(()=>setConn(), 5000); });
-}
-$("quickFeed").onclick = ()=>feedNow(porsiSel);
-$("feedBtn").onclick   = ()=>feedNow(porsiSel);
-$("pMinus").onclick = ()=>{ porsiSel=Math.max(1,porsiSel-1); $("pVal").textContent=porsiSel; };
-$("pPlus").onclick  = ()=>{ porsiSel=Math.min(5,porsiSel+1); $("pVal").textContent=porsiSel; };
-$("savePorsi").onclick = ()=>send("porsi", porsiSel, "Porsi jadwal jadi "+porsiSel);
-$("openBtn").onclick  = ()=>send("servo", "BUKA", "Perintah buka dikirim");
-$("closeBtn").onclick = ()=>send("servo", "TUTUP", "Perintah tutup dikirim");
-$("namaBtn").onclick  = ()=>{
-  const n=$("namaIn").value.trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8);
-  if (!n) return toast("Isi nama dulu (huruf/angka)","warn");
-  $("namaIn").value=n; send("nama", n, "Nama diganti jadi "+n);
-};
-$("gramBtn").onclick  = ()=>{
-  const g=Math.floor(+$("gramIn").value);
-  if (!(g>=1 && g<=100)) return toast("Isi gram 1-100","warn");
-  send("pakan", g, "Tambah pakan "+g+" g dikirim"); $("gramIn").value="";
-};
-$("syncBtn").onclick  = ()=>{ const d=new Date(), p=n=>String(n).padStart(2,"0"); send("jam", p(d.getHours())+":"+p(d.getMinutes()), "Jam alat disamakan dengan HP"); };
-
-$("hungryMin").value = settings.hungryMin;
-$("hungryMin").onchange = ()=>{ const v=Math.max(1,Math.min(1440,+$("hungryMin").value||360)); settings.hungryMin=v; $("hungryMin").value=v; store.set("hungryMin",String(v)); hungryNotified=false; renderAlerts(); };
-$("optSound").checked = settings.sound;
-$("optSound").onchange = ()=>{ settings.sound=$("optSound").checked; store.set("sound", settings.sound?"1":"0"); if (settings.sound) beep(); };
-function updNotifBtn(){
-  const b=$("optNotif");
-  if (!("Notification" in window)) { b.textContent="Tidak didukung"; b.disabled=true; return; }
-  b.textContent = Notification.permission==="granted" ? "Aktif ✓" : Notification.permission==="denied" ? "Diblokir" : "Aktifkan";
-}
-$("optNotif").onclick = async ()=>{ try { await Notification.requestPermission(); } catch(e){} updNotifBtn(); };
-$("testNotif").onclick = ()=>notify("ok","🔔","Tes notifikasi","Kalau ini muncul, peringatan berfungsi.");
-$("clearEv").onclick = ()=>{ events=[]; store.set("events","[]"); renderEvents(); };
-$("logout").onclick = ()=>{
-  store.del("u"); store.del("p"); if (client) client.end(true);
-  deviceOnline=false; S=null; $("app").hidden=true; $("nav").hidden=true; $("login").hidden=false; setConn();
-};
-$("loginBtn").onclick = ()=>{
-  const u=$("user").value.trim(), p=$("pass").value;
-  if (!u||!p) return toast("Isi username & password","warn");
-  audioCtx = audioCtx || null; connect(u,p);
-};
-
-document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
-  curTab=b.dataset.tab;
-  document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("act", x===b));
-  ["home","ctl","sched","notif"].forEach(t=>$("tab-"+t).hidden = t!==curTab);
-  if (curTab==="notif") { unread=0; updBadge(); }
-  window.scrollTo(0,0);
-});
+function done(...ids){ids.forEach(i=>dirty.delete(i));}
+function addPakan(){const g=Math.floor(+$('fpakan').value);if(!(g>=1&&g<=100)){toast('Isi gram 1-100');return;}if(pub('pakan',g)){toast('Menambah '+g+' g');}}
+function saveNama(){const v=$('fnama').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);if(!v){toast('Nama kosong (huruf/angka)');return;}if(pub('nama',v)){$('fnama').value=v;done('fnama');toast('Nama dikirim');}}
+function saveJadwal(i){const on=$('jo'+i).checked,t=$('jt'+i).value;if(on&&!t){toast('Isi jam');return;}if(pub('jadwal/'+(+i+1),on?t:'OFF')){done('jt'+i,'jo'+i);toast('Jadwal '+(+i+1)+' dikirim');}}
+function savePorsi(){if(pub('porsi',$('fporsi').value)){done('fporsi');toast('Porsi dikirim');}}
+function saveJam(){const v=$('fjam').value;if(!v){toast('Isi jam');return;}if(pub('jam',v)){done('fjam');toast('Jam dikirim');}}
+function doFeed(){if(pub('feed',$('ftes').value)) toast('Perintah makan dikirim');}
 
 /* ---------- pemantau berkala ---------- */
 setInterval(()=>{
-  if (!S) return;
-  // alat dianggap mati jika status tidak datang >15 dtk
-  if (deviceOnline && Date.now()-rx > 120000) { deviceOnline=false; setConn(); }
-  if (deviceOnline && !hungryNotified && hungrySec() > settings.hungryMin*60) {
-    hungryNotified = true;
-    notify("bad","😿","Kucing belum makan", "Sudah "+fmtDur(hungrySec())+" tanpa makan. Buka menu Kontrol untuk memberi makan.");
-  }
-  $("lastFed").textContent = S.last ? fmtDur(nowDev()-S.last)+" lalu" : "belum sejak alat nyala";
-  renderAlerts();
-}, 5000);
+  if(devOnline && lastRx && Date.now()-lastRx>STALE_MS) setDevice(false);
+  if(st){ $('vFed').textContent=lastFed?fmtAgo(lastFed):'belum ada catatan'; }
+},5000);
 
-updNotifBtn(); updBadge(); renderEvents(); renderSched(false);
-const u0=store.get("u"), p0=store.get("p");
-if (u0 && p0) connect(u0,p0); else $("login").hidden=false;
+/* ---------- init + auto connect ---------- */
+buildMenu();
+setDevice(false);
+lastFed = +(store.get('lastFed')||0);
+(function(){
+  let saved=null;
+  try{saved=JSON.parse(store.get('scf2')||'null');}catch(e){}
+  if(saved&&saved.user&&saved.pass){
+    $('user').value=saved.user; $('pass').value=saved.pass;
+    showLogin(false);
+    connect();
+  } else {
+    showLogin(true);
+  }
+  setBroker('off');
+})();
 </script>
 </body>
 </html>
